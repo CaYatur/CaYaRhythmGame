@@ -1,0 +1,35 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="CaYa Rhythm logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c0a22"/>
+      <stop offset="1" stop-color="#050310"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#1f6f9c"/><stop offset="1" stop-color="#5ad8ff"/></linearGradient>
+    <linearGradient id="pink" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#a02e63"/><stop offset="1" stop-color="#ff6fb0"/></linearGradient>
+    <linearGradient id="gold" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#9c7a1f"/><stop offset="1" stop-color="#ffd95a"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#2f8c43"/><stop offset="1" stop-color="#7dffa0"/></linearGradient>
+    <linearGradient id="purple" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#5b3aa6"/><stop offset="1" stop-color="#c08bff"/></linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect x="8" y="8" width="496" height="496" rx="108" fill="url(#bg)" stroke="#7c4dff" stroke-opacity="0.45" stroke-width="3"/>
+  <rect x="8" y="8" width="496" height="496" rx="108" fill="none" stroke="#35c4f0" stroke-opacity="0.18" stroke-width="1.5"/>
+
+  <!-- EQ cubuklari (serit renkleri) -->
+  <g filter="url(#glow)">
+    <rect x="104" y="206" width="44" height="170" rx="14" fill="url(#cyan)"/>
+    <rect x="166" y="150" width="44" height="226" rx="14" fill="url(#pink)"/>
+    <rect x="228" y="112" width="44" height="264" rx="14" fill="url(#gold)"/>
+    <rect x="290" y="168" width="44" height="208" rx="14" fill="url(#green)"/>
+    <rect x="352" y="232" width="44" height="144" rx="14" fill="url(#purple)"/>
+  </g>
+
+  <!-- vurus cizgisi (receptor hatti) -->
+  <g filter="url(#glow)">
+    <rect x="84" y="372" width="344" height="9" rx="4.5" fill="#ffffff" fill-opacity="0.92"/>
+  </g>
+  <circle cx="256" cy="376.5" r="11" fill="#fff"/>
+</svg>

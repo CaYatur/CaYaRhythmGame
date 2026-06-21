@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CaYa Rhythm</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/logo.svg" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/node_modules/three/build/three.module.js",
+      "three/addons/": "/node_modules/three/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <!-- ============ SVG IKON KUTUPHANESI (emoji yerine) ============ -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <defs>
+      <symbol id="ico-disc" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="ico-music" viewBox="0 0 24 24">
+        <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" fill="currentColor" stroke="none" /><circle cx="18" cy="16" r="3" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="ico-upload" viewBox="0 0 24 24">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+      </symbol>
+      <symbol id="ico-play" viewBox="0 0 24 24">
+        <polygon points="6 4 20 12 6 20 6 4" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="ico-play-circle" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" /><polygon points="10 8.5 16.5 12 10 15.5" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="ico-gauge" viewBox="0 0 24 24">
+        <line x1="6" y1="20" x2="6" y2="14" /><line x1="12" y1="20" x2="12" y2="8" /><line x1="18" y1="20" x2="18" y2="4" />
+      </symbol>
+      <symbol id="ico-layers" viewBox="0 0 24 24">
+        <polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" />
+      </symbol>
+      <symbol id="ico-settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+      </symbol>
+      <symbol id="ico-gamepad" viewBox="0 0 24 24">
+        <line x1="6" y1="12" x2="10" y2="12" /><line x1="8" y1="10" x2="8" y2="14" /><line x1="15" y1="13" x2="15.01" y2="13" /><line x1="18" y1="11" x2="18.01" y2="11" /><rect x="2" y="6" width="20" height="12" rx="3" />
+      </symbol>
+      <symbol id="ico-trophy" viewBox="0 0 24 24">
+        <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+      </symbol>
+      <symbol id="ico-crown" viewBox="0 0 24 24">
+        <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z" fill="currentColor" stroke="none" /><path d="M5 20h14" />
+      </symbol>
+      <symbol id="ico-pause" viewBox="0 0 24 24">
+        <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none" /><rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="ico-refresh" viewBox="0 0 24 24">
+        <polyline points="21 3 21 9 15 9" /><path d="M21 9a9 9 0 1 0-2 9" />
+      </symbol>
+      <symbol id="ico-menu" viewBox="0 0 24 24">
+        <line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" />
+      </symbol>
+      <symbol id="ico-star" viewBox="0 0 24 24">
+        <polygon points="12 2 15 9 22 9.3 16.5 14 18.5 21 12 17 5.5 21 7.5 14 2 9.3 9 9 12 2" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="ico-dot" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="7" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="ico-mic" viewBox="0 0 24 24">
+        <rect x="9" y="2" width="6" height="11" rx="3" /><path d="M5 10v1a7 7 0 0 0 14 0v-1" /><line x1="12" y1="18" x2="12" y2="22" /><line x1="8" y1="22" x2="16" y2="22" />
+      </symbol>
+      <symbol id="ico-wave" viewBox="0 0 24 24">
+        <polyline points="2 12 6 12 9 21 15 3 18 12 22 12" />
+      </symbol>
+      <symbol id="ico-drum" viewBox="0 0 24 24">
+        <ellipse cx="12" cy="6" rx="9" ry="3" /><path d="M3 6v9c0 1.66 4 3 9 3s9-1.34 9-3V6" /><line x1="5" y1="9" x2="2" y2="14" /><line x1="19" y1="9" x2="22" y2="14" />
+      </symbol>
+      <!-- DualSense / klavye yon ve yuz tuslari -->
+      <symbol id="ico-arrow-left" viewBox="0 0 24 24">
+        <polyline points="14 6 8 12 14 18" />
+      </symbol>
+      <symbol id="ico-arrow-right" viewBox="0 0 24 24">
+        <polyline points="10 6 16 12 10 18" />
+      </symbol>
+      <symbol id="ico-ps-square" viewBox="0 0 24 24">
+        <rect x="5" y="5" width="14" height="14" rx="2" />
+      </symbol>
+      <symbol id="ico-ps-circle" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="7.5" />
+      </symbol>
+      <symbol id="ico-ps-triangle" viewBox="0 0 24 24">
+        <polygon points="12 4 20.5 19 3.5 19" />
+      </symbol>
+      <symbol id="ico-keyboard" viewBox="0 0 24 24">
+        <rect x="2" y="6" width="20" height="12" rx="2" />
+        <line x1="6" y1="10" x2="6.01" y2="10" /><line x1="10" y1="10" x2="10.01" y2="10" /><line x1="14" y1="10" x2="14.01" y2="10" /><line x1="18" y1="10" x2="18.01" y2="10" />
+        <line x1="8" y1="14.5" x2="16" y2="14.5" />
+      </symbol>
+    </defs>
+  </svg>
+
+  <canvas id="game-canvas"></canvas>
+
+  <div id="app">
+    <!-- ANA MENU -->
+    <section id="screen-menu" class="screen active">
+      <div class="menu-shell">
+        <header class="masthead">
+          <div class="mast-brand">
+            <div class="wordmark"><b>CAYA</b><em>RHYTHM</em></div>
+            <div class="mast-sub" data-i18n="mast.sub">otomatik ritim çıkarıcı — sürükle, analiz et, çal</div>
+          </div>
+          <div class="mast-right">
+            <div class="lang-switch" id="lang-switch">
+              <button type="button" data-lang="tr">TR</button>
+              <button type="button" data-lang="en">EN</button>
+            </div>
+            <div class="eq" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </div>
+        </header>
+
+        <div class="menu-grid">
+          <div class="panel" id="panel-song">
+            <h2><span class="step">01</span><span data-i18n="panel.song">Şarkı</span></h2>
+            <div id="dropzone" tabindex="0">
+              <svg class="ico dz-icon"><use href="#ico-upload" /></svg>
+              <div data-i18n-html="dz.main">Dosyayı buraya sürükle<br>ya da <b>tıkla</b> ve seç</div>
+              <div class="dz-sub">MP3 · WAV · OGG · M4A · FLAC</div>
+              <input type="file" id="file-input" accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac" hidden />
+            </div>
+            <button class="btn ghost" id="btn-test-song">
+              <svg class="ico"><use href="#ico-play-circle" /></svg><span data-i18n="btn.testSong">Dahili test şarkısını dene</span>
+            </button>
+
+            <div id="analysis" hidden>
+              <div class="bar"><div id="analysis-fill"></div></div>
+              <div id="analysis-stage" data-i18n="analysis.preparing">Hazırlanıyor</div>
+            </div>
+
+            <div id="song-info" hidden>
+              <div class="si-name"><svg class="ico"><use href="#ico-music" /></svg><span id="si-name"></span></div>
+              <div class="si-meta" id="si-meta"></div>
+            </div>
+          </div>
+
+          <div class="panel" id="panel-diff">
+            <h2><span class="step">02</span><span data-i18n="panel.diff">Zorluk</span></h2>
+            <div class="cards" id="diff-cards"></div>
+            <h2 class="sub" data-i18n="panel.mode">Mod</h2>
+            <div class="cards" id="mode-cards"></div>
+          </div>
+
+          <div class="panel" id="panel-settings">
+            <h2><span class="step">03</span><span data-i18n="panel.settings">Ayarlar</span></h2>
+            <label class="setting">
+              <span><span data-i18n="set.speed">Nota hızı</span> <b id="set-speed-val">1.0x</b></span>
+              <input type="range" id="set-speed" min="0.6" max="1.6" step="0.05" value="1" />
+            </label>
+            <label class="setting">
+              <span><span data-i18n="set.latency">Gecikme ayarı</span> <b id="set-latency-val">0 ms</b></span>
+              <input type="range" id="set-latency" min="-200" max="200" step="5" value="0" />
+            </label>
+            <label class="setting">
+              <span><span data-i18n="set.volume">Ses</span> <b id="set-volume-val">%80</b></span>
+              <input type="range" id="set-volume" min="0" max="100" step="5" value="80" />
+            </label>
+            <button class="btn ghost" id="btn-rumble-test">
+              <svg class="ico"><use href="#ico-gamepad" /></svg><span data-i18n="btn.rumbleTest">Kolu seç &amp; titreşimi test et</span>
+            </button>
+            <div id="hiscore-box" hidden>
+              <h3><svg class="ico"><use href="#ico-trophy" /></svg><span data-i18n="hiscore.title">En iyi skor</span></h3>
+              <div id="hiscore-text"></div>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn primary big" id="btn-start" disabled>
+          <svg class="ico"><use href="#ico-play" /></svg><span data-i18n="btn.start">BAŞLA</span>
+        </button>
+
+        <footer id="controls-hint">
+          <div id="pad-status">
+            <svg class="ico"><use href="#ico-gamepad" /></svg>
+            <span id="pad-status-text">Kol bağlı değil — bağlamak için kolda herhangi bir tuşa bas</span>
+          </div>
+          <div class="hint-rows">
+            <div class="hint-row">
+              <svg class="ico"><use href="#ico-keyboard" /></svg>
+              <span data-i18n="controls.keyboard">Klavye</span>
+              <span id="hint-keys" class="keys"></span>
+              <span class="hint-sep" data-i18n="controls.boost">Boost</span><kbd data-i18n="kbd.space">Boşluk</kbd>
+              <span class="hint-sep" data-i18n="controls.pause">Duraklat</span><kbd data-i18n="kbd.esc">Esc</kbd>
+            </div>
+            <div class="hint-row">
+              <svg class="ico"><use href="#ico-gamepad" /></svg>
+              <span data-i18n="controls.controller">Kol</span>
+              <span id="hint-pad" class="keys"></span>
+              <span class="hint-sep" data-i18n="controls.boost">Boost</span><kbd>R2</kbd>
+              <span class="hint-sep" data-i18n="controls.pause">Duraklat</span><kbd>Options</kbd>
+            </div>
+          </div>
+        </footer>
+      </div>
+    </section>
+
+    <!-- OYUN HUD -->
+    <section id="screen-game" class="screen">
+      <div id="hud-progress"><div id="hud-progress-fill"></div></div>
+      <div id="hud-top">
+        <div id="hud-song-wrap"><span id="hud-song"></span></div>
+        <div id="hud-score-wrap">
+          <div id="hud-score">0</div>
+          <div id="hud-acc">%100.0</div>
+        </div>
+      </div>
+
+      <div id="hud-mult-wrap">
+        <div id="hud-mult-crown"><svg class="ico"><use href="#ico-crown" /></svg></div>
+        <div id="hud-mult-ring"><div id="hud-mult-inner"><span id="hud-mult">x1</span></div></div>
+        <div class="hud-label" data-i18n="hud.mult">ÇARPAN</div>
+      </div>
+
+      <div id="hud-boost">
+        <div id="hud-boost-bar">
+          <div class="boost-seg"><i></i></div>
+          <div class="boost-seg"><i></i></div>
+          <div class="boost-seg"><i></i></div>
+          <div class="boost-seg"><i></i></div>
+        </div>
+        <div id="hud-boost-hint" class="hud-label" data-i18n="hud.boost">BOOST</div>
+        <div id="hud-boost-key" class="ctl-key" data-i18n="kbd.space">Boşluk</div>
+      </div>
+
+      <div id="hud-center">
+        <div id="hud-judgment" class="judgment"></div>
+        <div id="hud-combo-wrap"><span id="hud-combo">0</span><span class="combo-label" data-i18n="hud.combo">KOMBO</span></div>
+      </div>
+
+      <div id="hud-countdown"></div>
+      <div id="hud-flash"></div>
+
+      <!-- dinamik kontrol gostergesi: her serit tusu kendi vurus bolgesinin altinda -->
+      <div id="hud-lane-keys" class="kbd"></div>
+
+      <!-- duraklatma tusu: alt kosede -->
+      <div id="hud-pause-key"><kbd>Esc</kbd><span data-i18n="ctl.pause">DURAKLAT</span></div>
+    </section>
+
+    <!-- SONUC EKRANI -->
+    <section id="screen-results" class="screen">
+      <div class="panel results-panel">
+        <div id="res-fc" class="res-fc" hidden><svg class="ico"><use href="#ico-star" /></svg><span data-i18n="res.fullCombo">TAM KOMBO</span><svg class="ico"><use href="#ico-star" /></svg></div>
+        <div id="res-grade">S</div>
+        <div id="res-score">0</div>
+        <div id="res-newrecord" hidden><svg class="ico"><use href="#ico-trophy" /></svg><span data-i18n="res.newRecord">YENİ REKOR!</span></div>
+        <div class="res-stats" id="res-stats"></div>
+        <div class="res-buttons">
+          <button class="btn primary" id="btn-retry"><svg class="ico"><use href="#ico-refresh" /></svg><span data-i18n="res.retry">Yeniden Oyna</span></button>
+          <button class="btn ghost" id="btn-menu"><svg class="ico"><use href="#ico-menu" /></svg><span data-i18n="res.menu">Menü</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- DURAKLATMA -->
+    <div id="overlay-pause" hidden>
+      <div class="panel pause-panel">
+        <h2><svg class="ico"><use href="#ico-pause" /></svg><span data-i18n="pause.title">Duraklatıldı</span></h2>
+        <button class="btn primary" id="btn-resume"><svg class="ico"><use href="#ico-play" /></svg><span data-i18n="pause.resume">Devam Et</span></button>
+        <button class="btn ghost" id="btn-restart"><svg class="ico"><use href="#ico-refresh" /></svg><span data-i18n="pause.restart">Yeniden Başlat</span></button>
+        <button class="btn ghost" id="btn-quit"><svg class="ico"><use href="#ico-menu" /></svg><span data-i18n="pause.quit">Menüye Dön</span></button>
+      </div>
+    </div>
+
+    <div id="toasts"></div>
+  </div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

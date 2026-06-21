@@ -1,0 +1,115 @@
+<svg width="1000" height="640" viewBox="0 0 1000 640" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI', Arial, sans-serif" role="img" aria-label="CaYa Rhythm menu">
+  <defs>
+    <linearGradient id="mbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#080614"/><stop offset="1" stop-color="#05030f"/></linearGradient>
+    <radialGradient id="mr" cx="0.9" cy="0.05" r="0.6"><stop offset="0" stop-color="#35c4f0" stop-opacity="0.12"/><stop offset="1" stop-color="#35c4f0" stop-opacity="0"/></radialGradient>
+    <radialGradient id="ml" cx="0.05" cy="1" r="0.6"><stop offset="0" stop-color="#7c4dff" stop-opacity="0.14"/><stop offset="1" stop-color="#7c4dff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="ecyan" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#35c4f0"/><stop offset="1" stop-color="#7c4dff"/></linearGradient>
+    <linearGradient id="epink" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#7c4dff"/><stop offset="1" stop-color="#f0509b"/></linearGradient>
+  </defs>
+  <rect width="1000" height="640" fill="url(#mbg)"/>
+  <rect width="1000" height="640" fill="url(#mr)"/><rect width="1000" height="640" fill="url(#ml)"/>
+  <g stroke="#8ca0d2" stroke-opacity="0.045" stroke-width="1">
+    <path d="M0 48H1000M0 96H1000M0 144H1000M0 192H1000M0 240H1000M0 288H1000M0 336H1000M0 384H1000M0 432H1000M0 480H1000M0 528H1000M0 576H1000M0 624H1000"/>
+    <path d="M48 0V640M96 0V640M144 0V640M192 0V640M240 0V640M288 0V640M336 0V640M384 0V640M432 0V640M480 0V640M528 0V640M576 0V640M624 0V640M672 0V640M720 0V640M768 0V640M816 0V640M864 0V640M912 0V640M960 0V640"/>
+  </g>
+
+  <!-- masthead -->
+  <g transform="translate(40,40)">
+    <text x="0" y="40" font-size="46" font-weight="900" letter-spacing="-2" fill="#ece8ff">CAYA</text>
+    <rect x="138" y="6" width="3" height="34" fill="#ffc83d"/>
+    <text x="152" y="34" font-size="20" font-weight="300" letter-spacing="9" fill="#35c4f0">RHYTHM</text>
+    <text x="2" y="66" font-family="Consolas, monospace" font-size="12" letter-spacing="2" fill="#9a90c4">AUTOMATIC RHYTHM EXTRACTOR — DROP, ANALYZE, PLAY</text>
+  </g>
+  <!-- lang switch + eq -->
+  <g transform="translate(816,40)" font-family="Consolas, monospace">
+    <rect x="0" y="0" width="104" height="26" rx="7" fill="none" stroke="#8ca0d2" stroke-opacity="0.16"/>
+    <rect x="0" y="0" width="52" height="26" rx="7" fill="#9a90c4" fill-opacity="0"/>
+    <text x="26" y="18" text-anchor="middle" font-size="13" font-weight="700" fill="#9a90c4">TR</text>
+    <rect x="52" y="0" width="52" height="26" rx="7" fill="#35c4f0"/>
+    <text x="78" y="18" text-anchor="middle" font-size="13" font-weight="700" fill="#05030f">EN</text>
+    <g transform="translate(40,40)">
+      <rect x="0"  y="14" width="4" height="20" fill="url(#ecyan)"/><rect x="9"  y="4" width="4" height="30" fill="url(#epink)"/>
+      <rect x="18" y="18" width="4" height="16" fill="url(#ecyan)"/><rect x="27" y="8" width="4" height="26" fill="url(#epink)"/>
+      <rect x="36" y="2" width="4" height="32" fill="url(#ecyan)"/><rect x="45" y="16" width="4" height="18" fill="url(#epink)"/>
+      <rect x="54" y="10" width="4" height="24" fill="url(#ecyan)"/><rect x="63" y="20" width="4" height="14" fill="url(#epink)"/>
+    </g>
+  </g>
+  <line x1="40" y1="118" x2="960" y2="118" stroke="#8ca0d2" stroke-opacity="0.16"/>
+
+  <!-- ===== panels ===== -->
+  <!-- panel 01 SONG -->
+  <g transform="translate(40,140)">
+    <rect width="300" height="380" rx="12" fill="#ffffff" fill-opacity="0.02" stroke="#8ca0d2" stroke-opacity="0.16"/>
+    <rect x="20" y="-1" width="34" height="2" fill="#35c4f0"/>
+    <rect x="18" y="18" width="26" height="18" rx="4" fill="#35c4f0"/><text x="31" y="32" text-anchor="middle" font-family="Consolas, monospace" font-size="12" font-weight="700" fill="#05030f">01</text>
+    <text x="54" y="33" font-family="Consolas, monospace" font-size="13" letter-spacing="3" fill="#ece8ff">SONG</text>
+    <!-- dropzone -->
+    <rect x="20" y="52" width="260" height="150" rx="10" fill="none" stroke="#8ca0d2" stroke-opacity="0.35" stroke-dasharray="6 5"/>
+    <path d="M150 92 l0 30 M138 104 l12 -12 l12 12" fill="none" stroke="#35c4f0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="150" y="150" text-anchor="middle" font-size="13" fill="#9a90c4">Drag a file here</text>
+    <text x="150" y="170" text-anchor="middle" font-size="13" fill="#ece8ff">or click to choose</text>
+    <text x="150" y="190" text-anchor="middle" font-family="Consolas, monospace" font-size="10" letter-spacing="1" fill="#6f6792">MP3 · WAV · OGG · M4A · FLAC</text>
+    <rect x="20" y="218" width="260" height="38" rx="9" fill="none" stroke="#8ca0d2" stroke-opacity="0.16"/>
+    <text x="150" y="242" text-anchor="middle" font-size="13" fill="#ece8ff">▷ Try the built-in test song</text>
+    <!-- song info -->
+    <rect x="20" y="276" width="260" height="84" rx="10" fill="#35c4f0" fill-opacity="0.06" stroke="#8ca0d2" stroke-opacity="0.16"/>
+    <rect x="20" y="276" width="2" height="84" fill="#35c4f0"/>
+    <text x="36" y="306" font-size="14" font-weight="700" fill="#ece8ff">Neon Drive</text>
+    <text x="36" y="330" font-family="Consolas, monospace" font-size="11" fill="#9a90c4">3:12 · 124 BPM · 1842 events detected</text>
+  </g>
+
+  <!-- panel 02 DIFFICULTY -->
+  <g transform="translate(352,140)">
+    <rect width="296" height="380" rx="12" fill="#ffffff" fill-opacity="0.02" stroke="#8ca0d2" stroke-opacity="0.16"/>
+    <rect x="20" y="-1" width="34" height="2" fill="#35c4f0"/>
+    <rect x="18" y="18" width="26" height="18" rx="4" fill="#35c4f0"/><text x="31" y="32" text-anchor="middle" font-family="Consolas, monospace" font-size="12" font-weight="700" fill="#05030f">02</text>
+    <text x="54" y="33" font-family="Consolas, monospace" font-size="13" letter-spacing="3" fill="#ece8ff">DIFFICULTY</text>
+    <!-- diff cards 2x2 -->
+    <g font-size="13" font-weight="700" fill="#ece8ff">
+      <g transform="translate(20,50)"><rect width="124" height="46" rx="9" fill="#8ca0d2" fill-opacity="0.04" stroke="#8ca0d2" stroke-opacity="0.16"/><circle cx="16" cy="18" r="5" fill="#59d96b"/><text x="28" y="22">Easy</text><text x="14" y="38" font-family="Consolas, monospace" font-size="10" font-weight="400" fill="#9a90c4">4 keys</text></g>
+      <g transform="translate(152,50)"><rect width="124" height="46" rx="9" fill="#35c4f0" fill-opacity="0.12" stroke="#35c4f0"/><rect x="-1" y="9" width="2" height="28" fill="#35c4f0"/><circle cx="16" cy="18" r="5" fill="#ffc83d"/><text x="28" y="22">Medium</text><text x="14" y="38" font-family="Consolas, monospace" font-size="10" font-weight="400" fill="#9a90c4">4 keys</text></g>
+      <g transform="translate(20,104)"><rect width="124" height="46" rx="9" fill="#8ca0d2" fill-opacity="0.04" stroke="#8ca0d2" stroke-opacity="0.16"/><circle cx="16" cy="18" r="5" fill="#ff5566"/><text x="28" y="22">Hard</text><text x="14" y="38" font-family="Consolas, monospace" font-size="10" font-weight="400" fill="#9a90c4">4 keys</text></g>
+      <g transform="translate(152,104)"><rect width="124" height="46" rx="9" fill="#8ca0d2" fill-opacity="0.04" stroke="#8ca0d2" stroke-opacity="0.16"/><circle cx="16" cy="18" r="5" fill="#b06af5"/><text x="28" y="22">Master</text><text x="14" y="38" font-family="Consolas, monospace" font-size="10" font-weight="400" fill="#9a90c4">5 keys</text></g>
+    </g>
+    <line x1="20" y1="170" x2="276" y2="170" stroke="#8ca0d2" stroke-opacity="0.16" stroke-dasharray="4 4"/>
+    <text x="20" y="190" font-family="Consolas, monospace" font-size="12" letter-spacing="3" fill="#9a90c4">MODE</text>
+    <g font-size="12" font-weight="700" fill="#ece8ff">
+      <g transform="translate(20,200)"><rect width="124" height="44" rx="9" fill="#8ca0d2" fill-opacity="0.04" stroke="#8ca0d2" stroke-opacity="0.16"/><text x="12" y="20">Vocals Only</text><text x="12" y="35" font-family="Consolas, monospace" font-size="9.5" font-weight="400" fill="#9a90c4">sung melody</text></g>
+      <g transform="translate(152,200)"><rect width="124" height="44" rx="9" fill="#8ca0d2" fill-opacity="0.04" stroke="#8ca0d2" stroke-opacity="0.16"/><text x="12" y="20">Melody</text><text x="12" y="35" font-family="Consolas, monospace" font-size="9.5" font-weight="400" fill="#9a90c4">lead line</text></g>
+      <g transform="translate(20,252)"><rect width="124" height="44" rx="9" fill="#8ca0d2" fill-opacity="0.04" stroke="#8ca0d2" stroke-opacity="0.16"/><text x="12" y="20">Instrumental</text><text x="12" y="35" font-family="Consolas, monospace" font-size="9.5" font-weight="400" fill="#9a90c4">drums &amp; bass</text></g>
+      <g transform="translate(152,252)"><rect width="124" height="44" rx="9" fill="#35c4f0" fill-opacity="0.12" stroke="#35c4f0"/><rect x="-1" y="8" width="2" height="28" fill="#35c4f0"/><text x="12" y="20">Mixed</text><text x="12" y="35" font-family="Consolas, monospace" font-size="9.5" font-weight="400" fill="#9a90c4">whole song</text></g>
+    </g>
+  </g>
+
+  <!-- panel 03 SETTINGS -->
+  <g transform="translate(664,140)">
+    <rect width="296" height="380" rx="12" fill="#ffffff" fill-opacity="0.02" stroke="#8ca0d2" stroke-opacity="0.16"/>
+    <rect x="20" y="-1" width="34" height="2" fill="#35c4f0"/>
+    <rect x="18" y="18" width="26" height="18" rx="4" fill="#35c4f0"/><text x="31" y="32" text-anchor="middle" font-family="Consolas, monospace" font-size="12" font-weight="700" fill="#05030f">03</text>
+    <text x="54" y="33" font-family="Consolas, monospace" font-size="13" letter-spacing="3" fill="#ece8ff">SETTINGS</text>
+    <g font-size="12">
+      <text x="20" y="70" fill="#9a90c4">Note speed</text><text x="276" y="70" text-anchor="end" font-family="Consolas, monospace" fill="#ece8ff">1.0x</text>
+      <rect x="20" y="80" width="256" height="5" rx="2.5" fill="#8ca0d2" fill-opacity="0.15"/><rect x="20" y="80" width="120" height="5" rx="2.5" fill="#35c4f0"/><circle cx="140" cy="82.5" r="7" fill="#35c4f0"/>
+      <text x="20" y="120" fill="#9a90c4">Offset (latency)</text><text x="276" y="120" text-anchor="end" font-family="Consolas, monospace" fill="#ece8ff">0 ms</text>
+      <rect x="20" y="130" width="256" height="5" rx="2.5" fill="#8ca0d2" fill-opacity="0.15"/><rect x="20" y="130" width="128" height="5" rx="2.5" fill="#35c4f0"/><circle cx="148" cy="132.5" r="7" fill="#35c4f0"/>
+      <text x="20" y="170" fill="#9a90c4">Volume</text><text x="276" y="170" text-anchor="end" font-family="Consolas, monospace" fill="#ece8ff">80%</text>
+      <rect x="20" y="180" width="256" height="5" rx="2.5" fill="#8ca0d2" fill-opacity="0.15"/><rect x="20" y="180" width="205" height="5" rx="2.5" fill="#35c4f0"/><circle cx="225" cy="182.5" r="7" fill="#35c4f0"/>
+    </g>
+    <rect x="20" y="210" width="256" height="38" rx="9" fill="none" stroke="#8ca0d2" stroke-opacity="0.16"/>
+    <text x="148" y="234" text-anchor="middle" font-size="13" fill="#ece8ff">Select controller &amp; test rumble</text>
+    <rect x="20" y="268" width="256" height="60" rx="10" fill="#ffc83d" fill-opacity="0.06" stroke="#8ca0d2" stroke-opacity="0.16"/>
+    <rect x="20" y="268" width="2" height="60" fill="#ffc83d"/>
+    <text x="36" y="292" font-family="Consolas, monospace" font-size="11" letter-spacing="2" fill="#ffc83d">BEST SCORE</text>
+    <text x="36" y="314" font-family="Consolas, monospace" font-size="12" fill="#ece8ff">1,284,500 · 98.7% · S</text>
+  </g>
+
+  <!-- START -->
+  <rect x="40" y="540" width="920" height="50" rx="10" fill="#ffc83d"/>
+  <text x="500" y="572" text-anchor="middle" font-size="18" font-weight="800" letter-spacing="4" fill="#20160a">▶  START</text>
+
+  <!-- footer -->
+  <g transform="translate(40,608)" font-family="Consolas, monospace" font-size="11" fill="#9a90c4">
+    <text x="0" y="14">⌨ KEYBOARD  D F J K (L)   Boost: Space   Pause: Esc</text>
+    <text x="560" y="14">🎮 CONTROLLER  ← → □ △ ○   Boost: R2   Pause: Options</text>
+  </g>
+</svg>

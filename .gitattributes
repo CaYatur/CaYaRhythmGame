@@ -1,0 +1,9 @@
+# Normalize line endings to LF in the repository
+* text=auto eol=lf
+
+# Treat these as binary (no EOL conversion / diff)
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.png binary
+*.jpg binary

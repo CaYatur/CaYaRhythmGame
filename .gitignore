@@ -1,0 +1,17 @@
+# Editor / tooling
+.claude/
+
+# Dependencies
+node_modules/
+
+# Generated / large media (regenerate with: npm run make-test-song)
+public/test-song.wav
+
+# User-supplied test tracks (may be copyrighted — not distributed)
+public/testsongs/
+
+# Logs & OS cruft
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
