@@ -1,5 +1,5 @@
-// CaYa Rhythm - Nota haritasi ureticisi (v2)
-// Analiz olaylarini zorluk + moda gore notalara cevirir:
+// CaYa Rhythm - Nota haritasi ureticisi (v3)
+// Analiz olaylarini zorluk + enstruman parcasina gore notalara cevirir:
 //   - notalar DP vurus izlemeden gelen GERCEK vurus izgarasina yapistirilir
 //   - bolge sistemi: bolge1 = serit 0-1 (yon tuslari), bolge2 = serit 2+ (simge tuslari)
 //     her bolgede ayni anda en fazla 1 aktif nota; hold sirasinda bolge kilitli
@@ -28,12 +28,16 @@ export const DIFFICULTIES = {
   }
 };
 
+// Enstruman parcalari. feedback: kacirinca miksin hangi kismi kisilir (mixer.js)
 export const MODES = {
-  vocal: { labelKey: 'mode.vocal', iconId: 'ico-mic', descKey: 'mode.vocal.desc' },
-  melody: { labelKey: 'mode.melody', iconId: 'ico-wave', descKey: 'mode.melody.desc' },
-  instrument: { labelKey: 'mode.instrument', iconId: 'ico-drum', descKey: 'mode.instrument.desc' },
-  mixed: { labelKey: 'mode.mixed', iconId: 'ico-music', descKey: 'mode.mixed.desc' }
+  vocal: { labelKey: 'mode.vocal', iconId: 'ico-mic', descKey: 'mode.vocal.desc', feedback: 'vocal', color: '#f0509b' },
+  melody: { labelKey: 'mode.melody', iconId: 'ico-wave', descKey: 'mode.melody.desc', feedback: 'vocal', color: '#35c4f0' },
+  bass: { labelKey: 'mode.bass', iconId: 'ico-bass', descKey: 'mode.bass.desc', feedback: 'bass', color: '#59d96b' },
+  drums: { labelKey: 'mode.drums', iconId: 'ico-drum', descKey: 'mode.drums.desc', feedback: 'drums', color: '#ffc83d' },
+  mixed: { labelKey: 'mode.mixed', iconId: 'ico-band', descKey: 'mode.mixed.desc', feedback: 'mix', color: '#b57cff' }
 };
+// eski kayitlar ('instrument' modu) -> yeni davul parcasi
+export const LEGACY_MODES = { instrument: 'drums' };
 
 // deterministik sozde-rastgele (ayni sarki ayni harita)
 function makeRng(seed) {
@@ -44,7 +48,7 @@ function makeRng(seed) {
   };
 }
 
-const MELODIC = new Set(['vocal', 'melody']);
+const MELODIC = new Set(['vocal', 'melody', 'bass']);
 
 // Nota zamanini gercek vurus izgarasina yapistir (DP vurus listesi uzerinden).
 // div: vurus basina bolme (2 = 8'lik, 4 = 16'lik). Tolerans disindaysa dokunma.
@@ -74,7 +78,9 @@ function makeSnapper(beats, beatPeriod, div) {
   };
 }
 
-export function buildChart(analysis, diffKey, modeKey) {
+// opts: { lefty: seritleri aynala, range: [t0, t1] yalniz bu araliktaki notalar (pratik) }
+export function buildChart(analysis, diffKey, modeKey, opts = {}) {
+  modeKey = LEGACY_MODES[modeKey] || modeKey;
   const cfg = DIFFICULTIES[diffKey];
   const L = cfg.lanes;
   const ev = analysis.events;
@@ -91,8 +97,10 @@ export function buildChart(analysis, diffKey, modeKey) {
   } else if (modeKey === 'melody') {
     push(ev.melody, 'melody');
     if (pool.length < 16) push(ev.vocal, 'vocal');
-  } else if (modeKey === 'instrument') {
-    push(ev.kick, 'kick'); push(ev.snare, 'snare'); push(ev.hat, 'hat'); push(ev.bass, 'bass');
+  } else if (modeKey === 'bass') {
+    push(ev.bass, 'bass');
+  } else if (modeKey === 'drums') {
+    push(ev.kick, 'kick'); push(ev.snare, 'snare'); push(ev.hat, 'hat');
   } else { // mixed: melodi omurga + yalnız GÜÇLÜ vuruşlar (hat yok) — daha az karmaşa
     push(ev.melody, 'melody');
     push(ev.kick, 'kick');
@@ -153,10 +161,10 @@ export function buildChart(analysis, diffKey, modeKey) {
   const laneOf = (e) => {
     let lane;
     switch (e.type) {
-      case 'kick': case 'bass': lane = 0; break;
+      case 'kick': lane = 0; break;
       case 'snare': lane = 1 + (snareFlip++ % 2); break;
       case 'hat': lane = L - 1 - (hatFlip++ % 2); break;
-      case 'vocal': case 'melody': {
+      case 'bass': case 'vocal': case 'melody': {
         if (e.pitch > 0 && pHi > pLo) {
           const p = Math.max(0, Math.min(1, (e.pitch - pLo) / (pHi - pLo)));
           lane = Math.round(p * (L - 1));
@@ -258,6 +266,23 @@ export function buildChart(analysis, diffKey, modeKey) {
     }
   }
 
+  // solak duzeni: seritleri aynala (zor pasajlar diger ele gecer)
+  if (opts.lefty) for (const n of notes) n.lane = L - 1 - n.lane;
+
+  // bolum etiketi (sonuc ekranindaki bolum bazli dogruluk icin)
+  const sections = analysis.sections || [];
+  for (const n of notes) {
+    let si = 0;
+    while (si + 1 < sections.length && sections[si + 1].t <= n.time) si++;
+    n.section = si;
+  }
+
+  // pratik: yalniz secili zaman araligi
+  if (opts.range) {
+    const [r0, r1] = opts.range;
+    for (let i = notes.length - 1; i >= 0; i--) if (notes[i].time < r0 || notes[i].time > r1) notes.splice(i, 1);
+  }
+
   notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
   notes.forEach((n, i) => { n.id = i; });
 
@@ -298,7 +323,21 @@ export function buildChart(analysis, diffKey, modeKey) {
       boostNotes,
       boostGroups,
       nps: notes.length > 1 ? +(notes.length / span).toFixed(1) : 0,
-      lowVocal: modeKey === 'vocal' && notes.length < 30
+      lowVocal: modeKey === 'vocal' && notes.length < 30,
+      maxScore: idealScore(notes)
     }
   };
+}
+
+// Kusursuz oyunun (boost'suz) puani: yildiz esikleri buna gore hesaplanir.
+// scoring.js ile ayni kurallar: 100 * carpan, carpan her 10 komboda +1 (6x'e kadar),
+// hold: 0.1 sn basina 12 * carpan + 50 * carpan tamamlama.
+export function idealScore(notes) {
+  let s = 0;
+  notes.forEach((n, i) => {
+    const m = Math.min(6, 1 + Math.floor((i + 1) / 10));
+    s += 100 * m;
+    if (n.type === 'hold') s += (Math.floor(n.dur / 0.1) * 12 + 50) * m;
+  });
+  return s;
 }

@@ -1,6 +1,8 @@
 // CaYa Rhythm - 3D Motor (Three.js)
-// Fortnite Festival tarzi perspektifli otoyol: notalar uzaktan (yukaridan) gelir,
-// alt taraftaki vurus cizgisine ulasir. Bloom, parcacik ve isik efektleri.
+// Perspektifli nota otoyolu: notalar uzaktan gelir, alttaki vurus cizgisine ulasir.
+// Sahne: truss kemerleri, donen spot isiklari, canli spektrum LED duvari,
+// hoparlor kuleleri ve sahne metresine tepki veren seyirci. Isiklar bolum
+// yogunluguna ve enerji egrisine gore degisir. Hepsi prosedurel (harici model yok).
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -36,6 +38,54 @@ function glowTexture() {
   g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+// otoyol dokusu: koyu gradyan + ince altigen/izgara deseni (tekrarlanir, akar)
+function highwayTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 256, 0);
+  grd.addColorStop(0, '#120c2c'); grd.addColorStop(0.5, '#0a0718'); grd.addColorStop(1, '#120c2c');
+  g.fillStyle = grd; g.fillRect(0, 0, 256, 256);
+  g.strokeStyle = 'rgba(124,77,255,0.10)'; g.lineWidth = 1;
+  for (let y = 0; y <= 256; y += 32) { g.beginPath(); g.moveTo(0, y); g.lineTo(256, y); g.stroke(); }
+  g.strokeStyle = 'rgba(53,196,240,0.05)';
+  for (let x = 0; x <= 256; x += 16) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 256); g.stroke(); }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// yuvarlak koseli, pahli yassi blok (XZ duzleminde yatar, Y merkezli)
+function roundedSlab(w, d, h, r, bevel) {
+  const s = new THREE.Shape();
+  const x = -w / 2, y = -d / 2;
+  s.moveTo(x + r, y);
+  s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + d - r); s.quadraticCurveTo(x + w, y + d, x + w - r, y + d);
+  s.lineTo(x + r, y + d); s.quadraticCurveTo(x, y + d, x, y + d - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+  const core = Math.max(0.01, h - 2 * bevel);
+  const geo = new THREE.ExtrudeGeometry(s, {
+    depth: core, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.8,
+    bevelSegments: 2, curveSegments: 5
+  });
+  geo.rotateX(-Math.PI / 2);      // ekstruzyon +Y'ye
+  geo.translate(0, -core / 2, 0); // dikey merkez
+  return geo;
+}
+
+// spot isik konisi icin dikey solma dokusu
+function beamTexture() {
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 128;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 128);
+  grd.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 4, 128);
   return new THREE.CanvasTexture(c);
 }
 
@@ -83,9 +133,12 @@ export class Engine {
 
     // otoyol zemini
     const hwGeo = new THREE.PlaneGeometry(W + 0.7, 60);
+    this.hwTex = highwayTexture();
+    this.hwTex.wrapS = this.hwTex.wrapT = THREE.RepeatWrapping;
+    this.hwTex.repeat.set(1, 6);
     const hwMat = new THREE.MeshStandardMaterial({
-      color: 0x0d0a1e, roughness: 0.35, metalness: 0.6,
-      transparent: true, opacity: 0.94
+      color: 0xffffff, map: this.hwTex, roughness: 0.32, metalness: 0.55,
+      transparent: true, opacity: 0.96
     });
     const hw = new THREE.Mesh(hwGeo, hwMat);
     hw.rotation.x = -Math.PI / 2;
@@ -113,18 +166,21 @@ export class Engine {
       this.railMats.push(railMat);
     }
 
-    // yol kenari neon direkleri (beat ile parlar)
-    this.pylons = [];
-    for (let i = 0; i < 9; i++) {
-      for (const side of [-1, 1]) {
-        const mat = new THREE.MeshStandardMaterial({
-          color: 0x150f2a, emissive: 0x3d2bb5, emissiveIntensity: 0.5, roughness: 0.5
-        });
-        const p = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.4 + (i % 3) * 0.6, 0.3), mat);
-        p.position.set(side * (W / 2 + 1.6), 1.2, RECEPTOR_Z - 4 - i * 5.5);
-        scene.add(p);
-        this.pylons.push({ mesh: p, mat, phase: i });
-      }
+    // sahne cevresi: zemin izgarasi, truss kemerleri, spotlar, LED duvar,
+    // hoparlorler, seyirci
+    this.partColor = new THREE.Color(opts.partColor || '#7c4dff');
+    this._buildStage(W);
+
+    // vurus / olcu cizgileri (otoyolda akar)
+    this.beatLineTimes = (opts.beats && opts.beats.length > 4) ? opts.beats : null;
+    this.beatLines = [];
+    const blGeo = new THREE.BoxGeometry(W, 0.012, 0.06);
+    for (let i = 0; i < 48; i++) {
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.15, depthWrite: false });
+      const m = new THREE.Mesh(blGeo, mat);
+      m.visible = false;
+      scene.add(m);
+      this.beatLines.push(m);
     }
 
     // arka plan yildizlari
@@ -227,8 +283,9 @@ export class Engine {
       new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
 
     // nota mesh havuzu: yatay duzlemde yatan dikdortgen plakalar (+ parlak ic plaka)
-    this.headGeo = new THREE.BoxGeometry(LANE_W * 0.74, 0.12, 0.46);
-    this.headTopGeo = new THREE.BoxGeometry(LANE_W * 0.56, 0.05, 0.28);
+    // pahli (bevel) mucevher notalar: yuvarlak koseli govde + parlak ic plaka
+    this.headGeo = roundedSlab(LANE_W * 0.7, 0.42, 0.12, 0.06, 0.035);
+    this.headTopGeo = roundedSlab(LANE_W * 0.5, 0.24, 0.08, 0.03, 0.015);
     this.tailGeo = new THREE.BoxGeometry(0.52, 0.06, 1); // z olcegi nota basina ayarlanir
     this.pool = [];
     this.meshByNote = new Map();
@@ -591,10 +648,10 @@ export class Engine {
     }
     this.beatPulse *= Math.exp(-dt * 5);
 
-    for (const p of this.pylons) {
-      const wave = (p.phase % 3) === (this.beatIdx % 3) ? 1 : 0.4;
-      p.mat.emissiveIntensity = 0.4 + this.beatPulse * 2.2 * wave + this.bassLevel * 1.2;
-    }
+    this._updateStage(songT, dt);
+    this._updateBeatLines(songT);
+    // otoyol dokusu akar (hareket hissi)
+    this.hwTex.offset.y = -((songT * this.speed) / (60 / 6)) % 1;
     // kilometre tasi nabzi (kombo/carpan kutlamasi raylarda yasanir)
     this.milestonePulse = (this.milestonePulse || 0) * Math.exp(-dt * 4);
 
@@ -654,6 +711,289 @@ export class Engine {
     this.composer.render();
   }
 
+  // ---- sahne cevresi ----
+  _buildStage(W) {
+    const scene = this.scene;
+    const side = W / 2;
+    this.stageMats = [];   // isik seritleri (vurusla parlar)
+    this.spots = [];
+    this.speakers = [];
+
+    // zemin: koyu yansitici duzlem + neon izgara
+    {
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const g = c.getContext('2d');
+      g.fillStyle = '#05030f'; g.fillRect(0, 0, 128, 128);
+      g.strokeStyle = 'rgba(124,77,255,0.55)'; g.lineWidth = 2;
+      g.strokeRect(0, 0, 128, 128);
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(30, 30);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.floorTex = tex;
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), new THREE.MeshStandardMaterial({
+        map: tex, color: 0x6a5acd, emissive: 0x1a0f40, emissiveIntensity: 0.4, roughness: 0.6, metalness: 0.3
+      }));
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.set(0, -0.6, -20);
+      scene.add(floor);
+    }
+
+    // truss kemerleri: iki ayak + ust kiris, uzerlerinde isik seritleri
+    const trussMat = new THREE.MeshStandardMaterial({ color: 0x2a2440, roughness: 0.4, metalness: 0.85 });
+    const span = side + 3.4, hgt = 7.2;
+    for (let k = 0; k < 5; k++) {
+      const z = 2 - k * 11;
+      const g = new THREE.Group();
+      for (const sx of [-1, 1]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.35, hgt, 0.35), trussMat);
+        leg.position.set(sx * span, hgt / 2 - 0.6, 0);
+        g.add(leg);
+        const strip = new THREE.Mesh(new THREE.BoxGeometry(0.08, hgt * 0.9, 0.08), this._stageMat());
+        strip.position.set(sx * (span - 0.22), hgt / 2 - 0.6, 0.2);
+        g.add(strip);
+      }
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(span * 2 + 0.35, 0.4, 0.4), trussMat);
+      beam.position.set(0, hgt - 0.6, 0);
+      g.add(beam);
+      const beamStrip = new THREE.Mesh(new THREE.BoxGeometry(span * 2, 0.07, 0.07), this._stageMat());
+      beamStrip.position.set(0, hgt - 0.85, 0.22);
+      g.add(beamStrip);
+      g.position.z = z;
+      scene.add(g);
+
+      // ilk uc kemerde asili spotlar (konik isik huzmeleri)
+      if (k >= 1 && k <= 3) {
+        for (const sx of [-0.55, 0.55]) {
+          const beamMat = new THREE.MeshBasicMaterial({
+            map: this._beamTex || (this._beamTex = beamTexture()), color: 0xffffff,
+            transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending,
+            depthWrite: false, side: THREE.DoubleSide
+          });
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(2.2, 9, 24, 1, true), beamMat);
+          cone.geometry.translate(0, -4.5, 0); // tepe noktasi orijinde
+          const pivot = new THREE.Group();
+          pivot.position.set(sx * span, hgt - 1, z);
+          pivot.add(cone);
+          const head = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 0.5, 12), trussMat);
+          pivot.add(head);
+          scene.add(pivot);
+          this.spots.push({ pivot, mat: beamMat, phase: k * 1.7 + sx * 2, sx });
+        }
+      }
+    }
+
+    // LED duvar: canli spektrum (CanvasTexture)
+    {
+      const c = document.createElement('canvas');
+      c.width = 512; c.height = 160;
+      this.ledCanvas = c;
+      this.ledCtx = c.getContext('2d');
+      this.ledTex = new THREE.CanvasTexture(c);
+      this.ledTex.colorSpace = THREE.SRGBColorSpace;
+      const led = new THREE.Mesh(new THREE.PlaneGeometry(46, 14.4), new THREE.MeshBasicMaterial({ map: this.ledTex, transparent: true, opacity: 0.9 }));
+      led.position.set(0, 8.5, -50);
+      scene.add(led);
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(47, 15.4, 0.4), trussMat);
+      frame.position.set(0, 8.5, -50.35);
+      scene.add(frame);
+      this._ledFrame = 0;
+    }
+
+    // hoparlor kuleleri (vurus cizgisinin iki yaninda): bas ile pompalar
+    for (const sx of [-1, 1]) {
+      const cab = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.6, 1.2), new THREE.MeshStandardMaterial({ color: 0x0c0a16, roughness: 0.8, metalness: 0.3 }));
+      body.position.y = 1.3;
+      cab.add(body);
+      const coneMat = new THREE.MeshStandardMaterial({ color: 0x0a0814, emissive: 0x7c4dff, emissiveIntensity: 0.08, roughness: 0.7, metalness: 0.2 });
+      const cones = [];
+      for (const [y, r] of [[1.95, 0.42], [0.8, 0.55]]) {
+        const cn = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.7, 0.14, 24), coneMat);
+        cn.rotation.x = Math.PI / 2;
+        cn.position.set(0, y, 0.62);
+        cab.add(cn);
+        cones.push(cn);
+      }
+      cab.position.set(sx * (span + 1.6), -0.6, RECEPTOR_Z - 9);
+      cab.rotation.y = -sx * 0.45;
+      scene.add(cab);
+      this.speakers.push({ cones, mat: coneMat });
+    }
+
+    // seyirci: iki yanda kume kume siluetler (InstancedMesh). Sahne metresi
+    // yukseldikce zipliyor ve parliyorlar.
+    {
+      const N = 240;
+      const geo = new THREE.CapsuleGeometry(0.26, 0.75, 3, 8);
+      geo.translate(0, 0.64, 0);
+      const mat = new THREE.MeshStandardMaterial({ color: 0x120d26, emissive: 0x7c4dff, emissiveIntensity: 0.05, roughness: 0.95 });
+      const crowd = new THREE.InstancedMesh(geo, mat, N);
+      crowd.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.crowdData = [];
+      let i = 0;
+      while (i < N) {
+        const sx = i % 2 ? 1 : -1;
+        const x = sx * (span + 1.2 + Math.random() * 9);
+        const z = 4 - Math.random() * 40;
+        this.crowdData.push({ x, z, ph: Math.random() * Math.PI * 2, amp: 0.5 + Math.random() * 0.7, s: 0.85 + Math.random() * 0.35, arms: Math.random() < 0.35 });
+        i++;
+      }
+      this.crowd = crowd;
+      this.crowdMat = mat;
+      this._m4 = new THREE.Matrix4();
+      this._q = new THREE.Quaternion();
+      this._v = new THREE.Vector3();
+      this._sc = new THREE.Vector3();
+      scene.add(crowd);
+    }
+
+    this.intensity = 0.5;
+    this.intensityTarget = 0.5;
+    this.crowdLevel = 0.6;
+    this.crowdTarget = 0.6;
+  }
+
+  _stageMat() {
+    const m = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: this.partColor.clone(), emissiveIntensity: 0.8 });
+    this.stageMats.push(m);
+    return m;
+  }
+
+  // sahne metresi (0..1) -> seyirci coskusu
+  setCrowd(m) { this.crowdTarget = m; }
+
+  // bolum degisimi -> isik yogunlugu hedefi
+  setSection(sec) {
+    if (!sec) return;
+    this.intensityTarget = sec.intensity != null ? sec.intensity : 0.5;
+    this.sectionKick = 1; // bolum gecisinde kisa isik patlamasi
+  }
+
+  _energyAt(t) {
+    const e = this.opts.energy;
+    if (!e || !e.length) return 0.5;
+    const i = Math.max(0, Math.min(e.length - 1, Math.round(t * 10)));
+    return e[i];
+  }
+
+  _updateStage(songT, dt) {
+    this.intensity += (this.intensityTarget - this.intensity) * Math.min(1, dt * 1.5);
+    this.crowdLevel += (this.crowdTarget - this.crowdLevel) * Math.min(1, dt * 2);
+    this.sectionKick = (this.sectionKick || 0) * Math.exp(-dt * 2.5);
+    const energy = this._energyAt(Math.max(0, songT));
+    const lvl = 0.35 + 0.4 * this.intensity + 0.25 * energy; // genel isik seviyesi
+
+    // isik seritleri: parca rengi, vurusla nabiz; boost'ta altin
+    for (const m of this.stageMats) {
+      m.emissive.copy(this.partColor).lerp(C_GOLD, this.boostLevel);
+      m.emissiveIntensity = 0.25 + lvl * 0.45 + this.beatPulse * 0.9 * lvl + this.sectionKick * 0.8;
+    }
+
+    // spotlar: yogunlukla hizlanan salinim, renk dongusu
+    const sp = 0.4 + this.intensity * 1.1;
+    for (const s of this.spots) {
+      const a = songT * sp + s.phase;
+      s.pivot.rotation.z = Math.sin(a) * 0.55 - s.sx * 0.25;
+      s.pivot.rotation.x = 0.25 + Math.cos(a * 0.7) * 0.25;
+      const hue = (0.72 + 0.12 * Math.sin(songT * 0.15 + s.phase) + this.boostLevel * 0.4) % 1;
+      s.mat.color.setHSL(hue, 0.85, 0.6);
+      s.mat.opacity = (0.04 + 0.16 * lvl + this.beatPulse * 0.08 + this.sectionKick * 0.15) * (0.6 + 0.4 * this.crowdLevel);
+    }
+
+    // hoparlor konileri: bas seviyesiyle pompa
+    for (const sp2 of this.speakers) {
+      const k = 1 + this.bassLevel * 0.18 + this.beatPulse * 0.08;
+      for (const c of sp2.cones) c.scale.set(k, 1, k);
+      sp2.mat.emissiveIntensity = 0.04 + this.bassLevel * 0.35;
+      sp2.mat.emissive.copy(this.partColor);
+    }
+
+    // seyirci: vurusa senkron zipla; metre yuksekse daha cok, dusukse durgun
+    if (this.crowd) {
+      const hype = Math.max(0, (this.crowdLevel - 0.25) / 0.75);
+      const beatPhase = this.beatPeriodPhase(songT);
+      for (let i = 0; i < this.crowdData.length; i++) {
+        const c = this.crowdData[i];
+        const bounce = Math.max(0, Math.sin(beatPhase * Math.PI * 2 + c.ph * 0.3)) * c.amp * hype * 0.55;
+        this._v.set(c.x, -0.6 + bounce, c.z);
+        const sy = c.s * (c.arms && hype > 0.6 ? 1.18 : 1);
+        this._sc.set(c.s, sy, c.s);
+        this._q.setFromAxisAngle(this._yAxis || (this._yAxis = new THREE.Vector3(0, 1, 0)), Math.sin(songT + c.ph) * 0.3);
+        this._m4.compose(this._v, this._q, this._sc);
+        this.crowd.setMatrixAt(i, this._m4);
+      }
+      this.crowd.instanceMatrix.needsUpdate = true;
+      this.crowdMat.emissiveIntensity = 0.02 + hype * 0.14 + this.beatPulse * 0.08 * hype;
+      this.crowdMat.emissive.copy(this.partColor).lerp(new THREE.Color(0xff3344), Math.max(0, 0.3 - this.crowdLevel) * 3);
+    }
+
+    // LED duvar: her 2 karede bir canli spektrum
+    if (this.ledCtx && (this._ledFrame++ & 1) === 0) this._drawLed(songT, lvl);
+    this.floorTex.offset.y = (songT * this.speed / 160 * 30) % 1;
+  }
+
+  // vurus fazi 0..1 (seyirci senkronu)
+  beatPeriodPhase(t) {
+    const bp = this.opts.beatPeriod || 0.5;
+    return (((t - (this.opts.beatOffset || 0)) / bp) % 1 + 1) % 1;
+  }
+
+  _drawLed(songT, lvl) {
+    const g = this.ledCtx, W = 512, H = 160;
+    g.fillStyle = 'rgba(5,3,15,0.55)';
+    g.fillRect(0, 0, W, H);
+    const fd = this._freqData;
+    const n = 48, bw = W / n;
+    const base = '#' + this.partColor.getHexString();
+    for (let i = 0; i < n; i++) {
+      // log frekans eslemesi
+      let v = 0;
+      if (fd) {
+        const lo = Math.floor(Math.pow(fd.length * 0.7, i / n)), hi = Math.max(lo + 1, Math.floor(Math.pow(fd.length * 0.7, (i + 1) / n)));
+        for (let k = lo; k < hi; k++) v = Math.max(v, fd[k] || 0);
+        v /= 255;
+      }
+      const h = Math.max(2, v * H * 0.9);
+      const grd = g.createLinearGradient(0, H, 0, H - h);
+      grd.addColorStop(0, base);
+      grd.addColorStop(1, this.boostLevel > 0.5 ? '#ffc83d' : '#35c4f0');
+      g.fillStyle = grd;
+      g.globalAlpha = 0.45 + 0.55 * lvl;
+      g.fillRect(i * bw + 2, H - h, bw - 4, h);
+      // ust yansima
+      g.globalAlpha = 0.12;
+      g.fillRect(i * bw + 2, 0, bw - 4, h * 0.25);
+    }
+    g.globalAlpha = 1;
+    this.ledTex.needsUpdate = true;
+  }
+
+  // vurus/olcu cizgileri: gorunur penceredeki vuruslar otoyolda akar
+  _updateBeatLines(songT) {
+    let bt = this.beatLineTimes;
+    const lines = this.beatLines;
+    let used = 0;
+    if (bt) {
+      // ikili arama: songT'den onceki ilk vurus
+      let lo = 0, hi = bt.length;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (bt[m] < songT - 0.3) lo = m + 1; else hi = m; }
+      for (let i = lo; i < bt.length && used < lines.length; i++) {
+        const dtB = bt[i] - songT;
+        if (dtB > this.lookahead) break;
+        const z = RECEPTOR_Z - dtB * this.speed;
+        const m = lines[used++];
+        const down = i % 4 === 0;
+        m.visible = true;
+        m.position.set(0, 0.015, z);
+        m.scale.set(1, 1, down ? 2.2 : 1);
+        m.material.opacity = (down ? 0.32 : 0.12) * Math.min(1, (z - SPAWN_Z) / 10);
+      }
+    }
+    for (let i = used; i < lines.length; i++) lines[i].visible = false;
+  }
+
   resetPlayback() {
     // yeniden baslatma: tum mesh'leri havuza geri al
     for (const id of Array.from(this.meshByNote.keys())) {
@@ -687,7 +1027,7 @@ export class Engine {
       if (o.geometry) o.geometry.dispose();
       if (o.material) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach(m => m.dispose());
+        mats.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
       }
     });
     this.scene = null;

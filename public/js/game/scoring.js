@@ -1,4 +1,5 @@
-// CaYa Rhythm - Puanlama: vurus pencereleri, kombo, 1x-6x carpan, boost (x2)
+// CaYa Rhythm - Puanlama: vurus pencereleri, kombo, 1x-6x carpan, boost (x2),
+// performans metresi (bitirme/basarisizlik), yildizlar, zamanlama istatistikleri
 
 export const WINDOWS = {
   perfect: 0.050,
@@ -13,10 +14,23 @@ const HOLD_BONUS = 50;          // tamamlama bonusu
 const MULT_STEPS = [0, 10, 20, 30, 40, 50]; // kombo esikleri -> 1x..6x
 const MAX_BARS = 4;             // boost bari sayisi
 const BOOST_PER_BAR = 5;        // bar basina boost suresi (sn) — 4 bar = 20 sn
+// performans metresi (0..1): isabet yukseltir, kacirma dusurur; 0 = sahne kaybedildi
+const METER_START = 0.6;
+const METER_GAIN = { perfect: 0.022, great: 0.016, good: 0.008 };
+const METER_MISS = 0.05, METER_WRONG = 0.02; // ~12 ardisik kacirma = sahne kaybi
+// yildiz esikleri: kusursuz (boost'suz) puanin orani. 6 = altin yildizlar
+export const STAR_STEPS = [0.08, 0.18, 0.3, 0.48, 0.7, 1.0];
 
 export class Scoring {
-  constructor(notes, onEvent, laneCount) {
+  // opts: { maxScore: kusursuz puan (yildizlar), noFail: metre bitince oyun bitmez }
+  constructor(notes, onEvent, laneCount, opts = {}) {
     this.notes = notes; // zamana gore sirali
+    this.maxScore = opts.maxScore || 1;
+    this.noFail = !!opts.noFail;
+    this.meter = METER_START;
+    this.failed = false;
+    this.deltas = [];        // her isabetin zamanlama sapmasi (ms, + = gec)
+    this.sectionStats = {};  // bolum -> { hit, miss, total }
     this.onEvent = onEvent || (() => {});
     this.score = 0;
     this.combo = 0;
@@ -66,6 +80,32 @@ export class Scoring {
     if (m >= 6) return 1;
     const lo = MULT_STEPS[m - 1], hi = MULT_STEPS[m];
     return (this.combo - lo) / (hi - lo);
+  }
+
+  // 0..6 (kesirli): yildiz ilerlemesi
+  get stars() {
+    const r = this.score / this.maxScore;
+    let s = 0;
+    for (let i = 0; i < STAR_STEPS.length; i++) {
+      if (r >= STAR_STEPS[i]) s = i + 1;
+      else { const lo = i ? STAR_STEPS[i - 1] : 0; s += (r - lo) / (STAR_STEPS[i] - lo); break; }
+    }
+    return Math.min(6, s);
+  }
+
+  _sec(n) {
+    const k = n.section || 0;
+    return this.sectionStats[k] || (this.sectionStats[k] = { hit: 0, miss: 0, total: 0, perfect: 0 });
+  }
+
+  _meter(d) {
+    if (this.failed) return;
+    this.meter = Math.max(0, Math.min(1, this.meter + d));
+    this.onEvent('meter', { meter: this.meter });
+    if (this.meter <= 0 && !this.noFail) {
+      this.failed = true;
+      this.onEvent('fail', {});
+    }
   }
 
   judged() { return this.counts.perfect + this.counts.great + this.counts.good + this.counts.miss; }
@@ -186,6 +226,7 @@ export class Scoring {
         this._comboBreak();
         // aktif boost grubunda hatali calma -> grup bozulur
         if (this.activeGroupId != null) this._breakBoostGroup(this.activeGroupId, 'wrongHit');
+        this._meter(-METER_WRONG);
         this.onEvent('wrongHit', { lane });
       }
       return null;
@@ -205,6 +246,11 @@ export class Scoring {
 
     this.counts[judgment]++;
     this._comboUp();
+    this.deltas.push(Math.round((t - best.time) * 1000));
+    const sec = this._sec(best);
+    sec.hit++; sec.total++;
+    if (judgment === 'perfect') sec.perfect++;
+    this._meter(METER_GAIN[judgment]);
 
     // boost notasi: tap ise aninda kredi; hold ise tamamlaninca (_endHold).
     // grup zaten bozulduysa boost vermez.
@@ -280,6 +326,9 @@ export class Scoring {
         this.counts.miss++;
         this.mistakes++;
         this._comboBreak();
+        const sec = this._sec(n);
+        sec.miss++; sec.total++;
+        this._meter(-METER_MISS);
         if (n.boost) this._breakBoostGroup(n.boostGroup, 'miss');
         this.onEvent('miss', { note: n });
       }
@@ -342,6 +391,10 @@ export class Scoring {
       boostTotal: this.boostTotal,
       wrongHits: this.wrongHits,
       fullCombo: this.counts.miss === 0 && this.judged() > 0,
+      stars: this.stars,
+      failed: this.failed,
+      deltas: this.deltas.slice(),
+      sectionStats: { ...this.sectionStats },
       perfectRun: this.mistakes === 0 && this.judged() > 0 // taç: hiç hata yok
     };
   }
