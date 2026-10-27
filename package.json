@@ -1,13 +1,14 @@
 {
   "name": "caya-rhythm-game",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Browser rhythm game that auto-analyzes any audio file into a playable 3D note chart. Drop a track, pick a difficulty, and play with keyboard or DualSense.",
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
     "make-test-song": "node tools/make-test-song.js",
     "test": "node tools/boost-hold-test.mjs && node tools/analysis-bench.mjs --quick",
-    "bench": "node tools/analysis-bench.mjs"
+    "bench": "node tools/analysis-bench.mjs",
+    "build:pages": "node tools/build-pages.mjs"
   },
   "keywords": [
     "rhythm-game",
@@ -22,7 +23,7 @@
   ],
   "author": "CaYaDev (https://cayadev.com)",
   "license": "MIT",
-  "homepage": "https://github.com/CaYatur/CaYaRhythmGame#readme",
+  "homepage": "https://cayatur.github.io/CaYaRhythmGame/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/CaYatur/CaYaRhythmGame.git"

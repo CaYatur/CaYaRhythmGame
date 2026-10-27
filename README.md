@@ -4,13 +4,16 @@
 
 # CaYa Rhythm
 
-**Drop any song. It gets analyzed automatically. Play it on a neon 3D highway.**
+**Drop any song. It gets analyzed automatically. Play it on a neon 3D stage.**
 
-A browser rhythm game that turns any audio file into a playable note chart — no manual mapping, no downloads. Built with vanilla JavaScript and Three.js.
+A browser rhythm game that turns any audio file into playable note charts for vocals, lead, bass, drums or the full band. No manual mapping, no downloads. Built with vanilla JavaScript and Three.js.
+
+### ▶ [Play it now on GitHub Pages](https://cayatur.github.io/CaYaRhythmGame/)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-ffc83d.svg)](LICENSE)
 ![Three.js](https://img.shields.io/badge/Three.js-WebGL-35c4f0.svg)
 ![No build step](https://img.shields.io/badge/build-none-59d96b.svg)
+[![Deploy](https://github.com/CaYatur/CaYaRhythmGame/actions/workflows/pages.yml/badge.svg)](https://github.com/CaYatur/CaYaRhythmGame/actions/workflows/pages.yml)
 
 **English** · [Türkçe](README.tr.md)
 
@@ -20,19 +23,37 @@ A browser rhythm game that turns any audio file into a playable note chart — n
 
 ## ✨ Features
 
-- **Automatic chart generation** — drop an MP3 / WAV / OGG / M4A / FLAC and a Web Worker analyzes onsets, beats, tempo, melody contour and vocals to build a note chart. No manual mapping.
-- **Four difficulties** — Easy, Medium, Hard (4 lanes) and Master (5 lanes), each with its own density and snapping.
-- **Four play modes** — Vocals Only, Melody, Instrumental, or Mixed, so the same song plays differently.
-- **3D neon highway** — Three.js with bloom, beat-reactive rails, particles and a multiplier / boost system.
-- **Keyboard & controller** — full DualSense support over **WebHID** (reliable rumble, including Bluetooth), with a Gamepad-API fallback. In-game key hints switch automatically between keyboard and controller as you play.
-- **Bilingual UI** — English & Turkish, auto-detected from the browser language and switchable on the fly.
-- **Zero build step** — plain ES modules served by a tiny dependency-free Node server.
+### Gameplay
+- **Five instrument parts.** **Vocals**, **Lead**, **Bass** (lanes follow the bass pitch), **Drums** (kick / snare / cymbals) and **Full band**. Each card shows its note count and an intensity rating.
+- **Four difficulties.** Easy, Medium, Hard (4 lanes) and Master (5 lanes).
+- **Part feedback.** When you miss, *your* part drops out of the mix (vocal band, bass shelf or drum shelves), and it comes back as you hit again.
+- **Stage meter.** Hits fill it and misses drain it. Run it empty and you lose the stage (unless **No fail** is on). The crowd cheers or turns red with it.
+- **Stars.** Up to 5 stars plus gold stars, shown live in the HUD and on the results screen.
+- **Practice mode.** Pick any detected section and loop it at 50–100% speed.
+- **Boost.** Clear the white note groups to charge it, then double your multiplier (up to 12×).
+- **Results breakdown.** An early/late timing histogram with a latency suggestion, plus accuracy per song section.
+- **Latency calibration.** Tap along to a click track and the game sets the offset for you.
+- **Song library.** Analyzed songs are stored in your browser (IndexedDB) and reopen instantly, with no re-analysis.
+- **Lefty flip**, adjustable note speed and volume.
+
+### Audio analysis (all in-browser, ML-free)
+- **Stereo center extraction** from inter-channel similarity, plus **REPET** background removal to isolate the vocal.
+- **Sub-semitone pitch tracking** (harmonic salience, octave correction and Viterbi).
+- **Human-voice gate.** A **formant** trace, **micro-pitch** motion (vibrato/jitter) and **harmonicity** reject synth leads and pads that only resemble vocals.
+- **Drums.** SuperFlux onsets, with a kick **decay test** (rejects bass notes) and a snare **noisiness test** (rejects tonal plucks).
+- **Tempo & beat grid** (Ellis DP), **bass pitch**, **song structure** (self-similarity novelty, labeled A/B/C… with an intensity rating) and an energy curve.
+
+### Presentation
+- **3D stage.** Truss arches with light strips, sweeping spotlights, a live-spectrum **LED wall**, pumping speaker stacks, and a crowd that bounces to the beat and reacts to your stage meter.
+- **Note highway.** Beveled gem notes, a scrolling highway, beat and measure lines, bloom and particles. Lighting follows section intensity and the song's energy curve.
+- **Keyboard & controller.** Full DualSense support over **WebHID** (reliable rumble, including Bluetooth), with a Gamepad-API fallback.
+- **Bilingual UI.** English and Turkish, auto-detected and switchable on the fly.
 
 ## 🖼️ Preview
 
 <div align="center">
 
-<img src="assets/preview-menu.svg" alt="Main menu — pick a song, difficulty and mode" width="49%" />
+<img src="assets/preview-menu.svg" alt="Main menu — pick a song, part and difficulty" width="49%" />
 <img src="assets/preview-gameplay.svg" alt="Gameplay — 3D note highway with HUD" width="49%" />
 
 </div>
@@ -46,63 +67,68 @@ A browser rhythm game that turns any audio file into a playable note chart — n
 | Boost | `Space` | `R2` |
 | Pause | `Esc` | `Options` |
 
-During play, the on-screen key hints sit right under each lane and switch between keyboard and controller depending on what you last used.
-
 ## 🚀 Getting started
 
-> Requires [Node.js](https://nodejs.org) 18+. No build tools, no bundler.
+**Easiest:** open **<https://cayatur.github.io/CaYaRhythmGame/>**. Nothing to install, and your audio never leaves your machine.
+
+To run it locally (requires [Node.js](https://nodejs.org) 18+; there are no build tools):
 
 ```bash
 git clone https://github.com/CaYatur/CaYaRhythmGame.git
 cd CaYaRhythmGame
 npm install                 # installs Three.js
-npm run make-test-song      # generates a built-in test track (public/test-song.wav)
+npm run make-test-song      # generates the built-in test track (public/test-song.wav)
 npm start                   # serves on http://localhost:3000
 ```
 
-Then open <http://localhost:3000>, drop a song (or hit **Try the built-in test song**), choose a difficulty and mode, and press **Start**.
+| Script | What it does |
+| --- | --- |
+| `npm test` | Scoring tests + a quick analysis benchmark |
+| `npm run bench` | Full analysis benchmark (adds real songs from `public/testsongs/*.mp3` if present; needs `ffmpeg`) |
+| `npm run build:pages` | Builds the static site into `_site/` (the same bundle that GitHub Pages serves) |
 
-> **Controller rumble:** click **Select controller & test rumble** to pair a DualSense via WebHID (Chrome / Edge). USB is the most reliable, but Bluetooth works too.
+**Deployment:** every push to `main` runs `.github/workflows/pages.yml`. The workflow runs the tests, generates the test song, builds `_site/` and publishes it to GitHub Pages.
 
 ## 🧠 How it works
 
-Your audio never leaves your machine — the whole pipeline runs in the browser:
+1. **Decode & resample** to 22.05 kHz stereo; the raw left/right channels go to a Web Worker.
+2. **Analyze.** STFT on both channels, then a center mask, HPSS, REPET, pitch salience with Viterbi, voice features, drum and bass onsets, beat tracking and song structure.
+3. **Build charts.** Events are snapped to the beat grid and spread across lanes per part and difficulty. Notes are tagged with their section.
+4. **Play.** Three.js renders the stage, a Web Audio mixer handles part feedback and practice speed, and the scoring engine handles judgments, multiplier, boost, the stage meter and stars.
 
-1. **Decode & resample** the file to 22.05 kHz, splitting into center (vocals) and side channels.
-2. **Analyze in a Web Worker** — spectral-flux onset detection (SuperFlux-style), beat & tempo tracking, melody / vocal pitch contour and a REPET-style vocal separation.
-3. **Build the chart** — events are snapped to the detected beat grid and distributed across lanes per the chosen difficulty and mode.
-4. **Render & score** — Three.js draws the highway while a scoring engine handles judgments, combo, multiplier and the boost system.
+### Measured, not guessed
+
+`tools/analysis-bench.mjs` runs the **real worker** headlessly against ground truth. The test material is a synthetic singer (glottal source, vowel formants, vibrato/jitter, consonants) mixed over synthetic beds and real songs, plus decoys that must **not** count as vocals: flat synth leads, vibrato synth leads and center pads. Every threshold in the worker was tuned on it.
+
+| Metric (v1 → v2) | v1 | v2 |
+| --- | --- | --- |
+| Vocal recall under real mixes | 65% | **91%** |
+| Vocal pitch accuracy (±1 semitone, real mixes) | 59% | **73%** |
+| Vocal F1, synthetic | 0.53 | **0.84** |
+| False "vocals" on synth leads / pads | 23.8 / min | **2.9 / min** |
+| Kick / snare onset F1 | 61% / 28% | **71% / 41%** |
 
 ## 🏆 Scoring
 
 - **Judgments:** Perfect (±50 ms) / Great (±105 ms) / Good (±150 ms) / Miss
-- **Combo multiplier:** every 10 combo = +1× up to **6×**
-- **Gold notes ★:** hitting them Perfect charges the **boost bar**
-- **Boost (`R2` / `Space`):** doubles your multiplier for a few seconds (6× → 12×!)
-- **Hold notes:** keep pressed for continuous points + a completion bonus
-- Best scores are saved per song + difficulty + mode (localStorage)
-
-## 🛠️ Tech stack
-
-- **JavaScript (ES modules)** — no framework, no build step
-- **[Three.js](https://threejs.org)** + EffectComposer / UnrealBloom for the 3D highway
-- **Web Audio API** + **Web Workers** for the analysis pipeline
-- **WebHID** for DualSense rumble, with a **Gamepad API** fallback
-- **Node.js** — a tiny static file server (`server.js`), zero runtime dependencies
+- **Combo multiplier:** every 10 combo = +1×, up to **6×**; **Boost** doubles it
+- **Hold notes:** keep pressed for continuous points plus a completion bonus
+- **Stars:** relative to a perfect (no-boost) run; gold stars need a near-perfect score
+- Best scores are saved per song + difficulty + part (localStorage)
 
 ## 📁 Project structure
 
 ```
 public/
   index.html            UI shell + SVG icon library
-  css/style.css         neon theme + HUD
+  css/style.css         neon theme, menu, HUD, results
   js/
-    main.js             app flow: menu → analysis → game → results
-    i18n.js             EN/TR strings + helpers
-    audio/              analyzer bridge + analysis Web Worker
-    game/               chart builder, scoring, input, DualSense HID, 3D engine, HUD
-assets/                 logo, banner and preview images
-server.js               tiny static server
+    main.js             app flow: library → stage → game / practice → results
+    i18n.js             EN/TR strings
+    audio/              analysis worker, bridge, game mixer (part feedback)
+    game/               charts, scoring, input, DualSense HID, 3D engine, HUD, library
+tools/                  benchmark, synthetic test signals, test song, Pages builder
+.github/workflows/      GitHub Pages deployment
 ```
 
 ## 📄 License

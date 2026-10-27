@@ -4,13 +4,16 @@
 
 # CaYa Rhythm
 
-**Bir şarkı bırak. Otomatik analiz edilsin. Neon 3D otoyolda çal.**
+**Bir şarkı bırak. Otomatik analiz edilsin. Neon 3D sahnede çal.**
 
-Herhangi bir ses dosyasını çalınabilir bir nota haritasına dönüştüren tarayıcı tabanlı ritim oyunu — elle haritalama yok, indirme yok. Saf JavaScript ve Three.js ile yazıldı.
+Herhangi bir ses dosyasını vokal, lead, bas, davul ya da tam grup için çalınabilir nota haritalarına dönüştüren tarayıcı tabanlı ritim oyunu. Elle haritalama yok, indirme yok. Saf JavaScript ve Three.js ile yazıldı.
+
+### ▶ [Hemen GitHub Pages'te oyna](https://cayatur.github.io/CaYaRhythmGame/)
 
 [![Lisans: MIT](https://img.shields.io/badge/Lisans-MIT-ffc83d.svg)](LICENSE)
 ![Three.js](https://img.shields.io/badge/Three.js-WebGL-35c4f0.svg)
 ![Derleme yok](https://img.shields.io/badge/derleme-yok-59d96b.svg)
+[![Yayın](https://github.com/CaYatur/CaYaRhythmGame/actions/workflows/pages.yml/badge.svg)](https://github.com/CaYatur/CaYaRhythmGame/actions/workflows/pages.yml)
 
 [English](README.md) · **Türkçe**
 
@@ -20,13 +23,31 @@ Herhangi bir ses dosyasını çalınabilir bir nota haritasına dönüştüren t
 
 ## ✨ Özellikler
 
-- **Otomatik harita üretimi** — bir MP3 / WAV / OGG / M4A / FLAC bırak; bir Web Worker vuruşları, tempoyu, melodi konturunu ve vokali analiz edip nota haritası çıkarır. Elle haritalama yok.
-- **Dört zorluk** — Kolay, Orta, Zor (4 şerit) ve Usta (5 şerit); her biri kendi yoğunluğu ve ızgara hizasıyla.
-- **Dört mod** — Sadece Vokal, Melodi, Enstrümantal veya Karışık; aynı şarkı farklı oynanır.
-- **3D neon otoyol** — bloom, beat'e tepki veren raylar, parçacıklar ve çarpan / boost sistemiyle Three.js.
-- **Klavye & kol** — **WebHID** üzerinden tam DualSense desteği (Bluetooth dahil güvenilir titreşim), Gamepad-API yedeğiyle. Oyun içi tuş ipuçları, kullandığın girdiye göre klavye ↔ kol arasında otomatik değişir.
-- **İki dilli arayüz** — İngilizce & Türkçe; tarayıcı diline göre otomatik algılanır ve anında değiştirilebilir.
-- **Derleme adımı yok** — küçük, bağımlılıksız bir Node sunucusunun servis ettiği saf ES modülleri.
+### Oynanış
+- **Beş enstrüman parçası.** **Vokal**, **Lead**, **Bas** (şeritler bas perdesini izler), **Davul** (kick / trampet / zil) ve **Tam grup**. Her kartta nota sayısı ve yoğunluk göstergesi bulunur.
+- **Dört zorluk.** Kolay, Orta, Zor (4 şerit) ve Usta (5 şerit).
+- **Parça geri bildirimi.** Kaçırdığında *senin* parçan miksten kısılır (vokal bandı, bas rafı ya da davul rafları); isabetlerle geri gelir.
+- **Sahne metresi.** İsabetle dolar, kaçırmayla boşalır. Biterse sahneyi kaybedersin (**Kaybetme yok** açık değilse). Seyirci de buna göre coşar ya da kırmızıya döner.
+- **Yıldızlar.** 5 yıldız ve altın yıldızlar; HUD'da canlı, sonuç ekranında özet olarak.
+- **Pratik modu.** Tespit edilen herhangi bir bölümü seç ve %50–%100 hızda döngüde çal.
+- **Boost.** Beyaz nota gruplarını temiz çalarak doldur, sonra çarpanı ikiye katla (12×'e kadar).
+- **Sonuç analizi.** Gecikme önerisi veren erken/geç zamanlama histogramı ve şarkı bölümü bazında doğruluk.
+- **Gecikme kalibrasyonu.** Tıklamalara eşlik et, oyun ofseti senin yerine ayarlasın.
+- **Şarkı kütüphanesi.** Analiz edilen şarkılar tarayıcında (IndexedDB) saklanır ve yeniden analiz gerekmeden anında açılır.
+- **Solak düzen**, ayarlanabilir nota hızı ve ses.
+
+### Ses analizi (tamamı tarayıcıda, ML'siz)
+- **Stereo merkez çıkarımı** (kanal-arası benzerlik) ve vokali yalıtmak için **REPET** ile eşlik ayrıştırma.
+- **Yarım-ton altı perde takibi** (harmonik belirginlik, oktav düzeltmesi ve Viterbi).
+- **İnsan sesi kapısı.** **Formant** izi, **mikro perde** hareketi (vibrato/jitter) ve **harmoniklik**, yalnızca vokale benzeyen synth lead ve pad'leri eler.
+- **Davul.** SuperFlux vuruş tespiti; kick için **sönüm testi** (bas notalarını eler), trampet için **gürültülük testi** (tonal pluck'ları eler).
+- **Tempo ve vuruş ızgarası** (Ellis DP), **bas perdesi**, **şarkı yapısı** (öz-benzerlik yeniliği, A/B/C… harfleri ve yoğunluk) ve enerji eğrisi.
+
+### Görsel sunum
+- **3D sahne.** Işık şeritli truss kemerleri, dönen spot ışıkları, canlı spektrumlu **LED duvar**, pompalayan hoparlör kuleleri ve vuruşa göre zıplayıp sahne metrene tepki veren seyirci.
+- **Nota otoyolu.** Pahlı mücevher notalar, akan otoyol, vuruş ve ölçü çizgileri, bloom ve parçacıklar. Işıklar bölüm yoğunluğunu ve şarkının enerji eğrisini izler.
+- **Klavye ve kol.** **WebHID** üzerinden tam DualSense desteği (Bluetooth dahil güvenilir titreşim), Gamepad-API yedeğiyle.
+- **İki dilli arayüz.** İngilizce ve Türkçe; otomatik algılanır, anında değiştirilebilir.
 
 ## 🖼️ Önizleme
 
@@ -34,77 +55,82 @@ Herhangi bir ses dosyasını çalınabilir bir nota haritasına dönüştüren t
 
 <div align="center">
 
-<img src="assets/preview-menu.svg" alt="Ana menü — şarkı, zorluk ve mod seçimi" width="49%" />
+<img src="assets/preview-menu.svg" alt="Ana menü — şarkı, parça ve zorluk seçimi" width="49%" />
 <img src="assets/preview-gameplay.svg" alt="Oynanış — HUD'lu 3D nota otoyolu" width="49%" />
 
 </div>
 
 ## 🎮 Kontroller
 
-| İşlem | Klavye | DualSense |
+| Eylem | Klavye | DualSense |
 | --- | --- | --- |
 | Şeritler (4) | `D` `F` `J` `K` | ◄ ► ▢ ◯ |
 | Şeritler (5 · Usta) | `D` `F` `J` `K` `L` | ◄ ► ▢ △ ◯ |
 | Boost | `Boşluk` | `R2` |
 | Duraklat | `Esc` | `Options` |
 
-Oyun sırasında tuş ipuçları her şeridin tam altında durur ve en son kullandığın girdiye göre klavye ile kol arasında otomatik geçer.
+## 🚀 Başlarken
 
-## 🚀 Başlangıç
+**En kolayı:** **<https://cayatur.github.io/CaYaRhythmGame/>** adresini aç. Kurulum yok ve ses dosyan bilgisayarından hiç çıkmaz.
 
-> [Node.js](https://nodejs.org) 18+ gerekir. Derleme aracı veya paketleyici yok.
+Yerelde çalıştırmak için ([Node.js](https://nodejs.org) 18+ gerekir; derleme aracı yok):
 
 ```bash
 git clone https://github.com/CaYatur/CaYaRhythmGame.git
 cd CaYaRhythmGame
 npm install                 # Three.js'i kurar
 npm run make-test-song      # dahili test şarkısını üretir (public/test-song.wav)
-npm start                   # http://localhost:3000 üzerinde servis eder
+npm start                   # http://localhost:3000 adresinde açılır
 ```
 
-Ardından <http://localhost:3000> adresini aç, bir şarkı bırak (veya **Dahili test şarkısını dene**'ye bas), zorluk ve mod seç ve **BAŞLA**'ya bas.
+| Komut | Ne yapar |
+| --- | --- |
+| `npm test` | Puanlama testleri + hızlı analiz benchmark'ı |
+| `npm run bench` | Tam analiz benchmark'ı (`public/testsongs/*.mp3` varsa gerçek şarkılar da eklenir; `ffmpeg` gerekir) |
+| `npm run build:pages` | Statik siteyi `_site/` klasörüne paketler (GitHub Pages'in sunduğu paketin aynısı) |
 
-> **Kol titreşimi:** DualSense'i WebHID ile eşlemek için **Kolu seç & titreşimi test et**'e tıkla (Chrome / Edge). USB en güvenilirdir, ama Bluetooth da çalışır.
+**Yayın:** `main` dalına her push'ta `.github/workflows/pages.yml` çalışır. İş akışı testleri çalıştırır, test şarkısını üretir, `_site/` paketini oluşturur ve GitHub Pages'e yayımlar.
 
-## 🧠 Nasıl çalışır?
+## 🧠 Nasıl çalışır
 
-Sesin cihazından çıkmaz — tüm boru hattı tarayıcıda çalışır:
+1. **Çöz ve yeniden örnekle:** 22.05 kHz stereo; ham sol/sağ kanallar bir Web Worker'a gider.
+2. **Analiz et:** iki kanalda STFT, ardından merkez maskesi, HPSS, REPET, perde belirginliği ve Viterbi, ses özellikleri, davul ve bas vuruşları, vuruş takibi ve şarkı yapısı.
+3. **Harita üret:** olaylar vuruş ızgarasına hizalanır ve parçaya ve zorluğa göre şeritlere dağıtılır. Her nota bölümüyle etiketlenir.
+4. **Oyna:** sahneyi Three.js çizer; parça geri bildirimini ve pratik hızını Web Audio mikseri yönetir; isabet, çarpan, boost, sahne metresi ve yıldızları puanlama motoru hesaplar.
 
-1. Dosyayı **çöz & yeniden örnekle** (22.05 kHz), merkez (vokal) ve yan kanallara ayır.
-2. **Web Worker'da analiz et** — spektral akı ile vuruş tespiti (SuperFlux tarzı), beat & tempo takibi, melodi / vokal perde konturu ve REPET tarzı vokal ayrıştırma.
-3. **Haritayı kur** — olaylar tespit edilen vuruş ızgarasına yapıştırılır ve seçilen zorluk/moda göre şeritlere dağıtılır.
-4. **Çiz & puanla** — Three.js otoyolu çizerken puanlama motoru dereceleri, komboyu, çarpanı ve boost sistemini yönetir.
+### Tahmin değil, ölçüm
+
+`tools/analysis-bench.mjs`, **gerçek worker'ı** Node'da yer gerçeğine karşı çalıştırır. Test malzemesi, sentetik altlıklar ve gerçek şarkılar üzerine bindirilmiş sentetik bir şarkıcıdır (glottal kaynak, sesli harf formantları, vibrato/jitter, ünsüzler). Ayrıca vokal **sayılmaması** gereken tuzaklar da vardır: düz synth lead, vibratolu synth lead ve merkez pad. Worker'daki tüm eşikler bununla ayarlandı.
+
+| Ölçüt (v1 → v2) | v1 | v2 |
+| --- | --- | --- |
+| Gerçek miks altında vokal duyarlılığı | %65 | **%91** |
+| Vokal perde doğruluğu (±1 yarım ton, gerçek miks) | %59 | **%73** |
+| Vokal F1, sentetik | 0.53 | **0.84** |
+| Synth lead / pad'de yanlış "vokal" | 23.8 / dk | **2.9 / dk** |
+| Kick / trampet vuruş F1 | %61 / %28 | **%71 / %41** |
 
 ## 🏆 Puanlama
 
-- **Dereceler:** Kusursuz (±50 ms) / Harika (±105 ms) / İyi (±150 ms) / Kaçtı
-- **Kombo çarpanı:** her 10 kombo = +1× → en fazla **6×**
-- **Altın notalar ★:** Kusursuz vurmak **boost barını** doldurur
-- **Boost (`R2` / `Boşluk`):** birkaç saniye çarpanı ikiye katlar (6× → 12×!)
-- **Uzun notalar:** basılı tut, sürekli puan + tamamlama bonusu
-- En iyi skorlar şarkı + zorluk + mod bazında kaydedilir (localStorage)
-
-## 🛠️ Teknolojiler
-
-- **JavaScript (ES modülleri)** — framework yok, derleme yok
-- **[Three.js](https://threejs.org)** + 3D otoyol için EffectComposer / UnrealBloom
-- Analiz boru hattı için **Web Audio API** + **Web Worker**
-- DualSense titreşimi için **WebHID**, **Gamepad API** yedeğiyle
-- **Node.js** — küçük bir statik dosya sunucusu (`server.js`), sıfır çalışma zamanı bağımlılığı
+- **İsabet:** Kusursuz (±50 ms) / Harika (±105 ms) / İyi (±150 ms) / Kaçtı
+- **Kombo çarpanı:** her 10 kombo = +1×, en fazla **6×**; **Boost** bunu ikiye katlar
+- **Uzun notalar:** basılı tut; sürekli puan ve tamamlama bonusu
+- **Yıldızlar:** kusursuz (boost'suz) oyuna göre; altın yıldız için kusursuza yakın skor gerekir
+- En iyi skorlar şarkı + zorluk + parça başına kaydedilir (localStorage)
 
 ## 📁 Proje yapısı
 
 ```
 public/
-  index.html            arayüz iskeleti + SVG ikon kütüphanesi
-  css/style.css         neon tema + HUD
+  index.html            arayüz kabuğu + SVG ikon kütüphanesi
+  css/style.css         neon tema, menü, HUD, sonuçlar
   js/
-    main.js             akış: menü → analiz → oyun → sonuç
-    i18n.js             EN/TR metinler + yardımcılar
-    audio/              analiz köprüsü + analiz Web Worker'ı
-    game/               harita üretici, puanlama, girdi, DualSense HID, 3D motor, HUD
-assets/                 logo, banner ve önizleme görselleri
-server.js               küçük statik sunucu
+    main.js             akış: kütüphane → sahne → oyun / pratik → sonuç
+    i18n.js             TR/EN metinleri
+    audio/              analiz worker'ı, köprü, oyun mikseri (parça geri bildirimi)
+    game/               harita, puanlama, girdi, DualSense HID, 3D motor, HUD, kütüphane
+tools/                  benchmark, sentetik test sinyalleri, test şarkısı, Pages paketleyici
+.github/workflows/      GitHub Pages yayını
 ```
 
 ## 📄 Lisans
@@ -115,6 +141,6 @@ server.js               küçük statik sunucu
 
 <div align="center">
 
-**CaYaDev** tarafından yapıldı · [cayadev.com](https://cayadev.com)
+**CaYaDev** tarafından · [cayadev.com](https://cayadev.com)
 
 </div>
