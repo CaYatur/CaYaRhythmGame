@@ -128,11 +128,12 @@ function p95(arr, n) {
 }
 
 function percentileRanks(values) {
-  const sorted = Float32Array.from(values).sort();
+  // Float64: Float32 yuvarlamasi v'yi tum degerlerden buyuk gosterip >1 uretmesin
+  const sorted = Float64Array.from(values).sort();
   return values.map(v => {
     let lo = 0, hi = sorted.length;
     while (lo < hi) { const mid = (lo + hi) >> 1; if (sorted[mid] < v) lo = mid + 1; else hi = mid; }
-    return sorted.length > 1 ? lo / (sorted.length - 1) : 1;
+    return sorted.length > 1 ? Math.min(1, lo / (sorted.length - 1)) : 1;
   });
 }
 
@@ -635,6 +636,7 @@ function analyze(left, right, sampleRate, tune) {
   const fxKick = new Float32Array(F), fxSnare = new Float32Array(F), fxHat = new Float32Array(F);
   const fxBass = new Float32Array(F), enBass = new Float32Array(F), envBeat = new Float32Array(F);
   const enKick = new Float32Array(F);   // kick bandi toplam enerji (sonum testi)
+  const bassMidi = new Float32Array(F); // kare basina bas perdesi (MIDI)
   // yapi analizi: kare basina kroma (12) + 6 bant tini + yukseklik
   const chroma = new Float32Array(F * 12), timbre = new Float32Array(F * 6), loud = new Float32Array(F);
   const snFlat = new Float32Array(F);   // perkusif 1-8 kHz spektral duzlugu (gurultuluk)
@@ -762,9 +764,15 @@ function analyze(left, right, sampleRate, tune) {
     fxBass[c] = bandSuperFlux(lsp, prevLspMax, BAND.bass[0], BAND.bass[1]);
     maxFilt(lsp, tmpMax); prevLspMax.set(tmpMax);
 
-    let eB = 0;
-    for (let b = BAND.bass[0]; b < BAND.bass[1]; b++) eB += shRow[b];
+    let eB = 0, bB = BAND.bass[0], bV = 0;
+    for (let b = BAND.bass[0]; b < BAND.bass[1]; b++) { eB += shRow[b]; if (shRow[b] > bV) { bV = shRow[b]; bB = b; } }
     enBass[c] = eB;
+    // bas perdesi: harmonik bas bandindaki tepe (parabolik interpolasyon)
+    {
+      const a = shRow[bB - 1] || 0, m = bV, r = shRow[bB + 1] || 0, den = a - 2 * m + r;
+      const dx = Math.abs(den) > 1e-12 ? Math.max(-0.5, Math.min(0.5, 0.5 * (a - r) / den)) : 0;
+      bassMidi[c] = 69 + 12 * Math.log2(Math.max(20, (bB + dx) * BIN_HZ) / 440);
+    }
     let eK = 0;
     for (let b = BAND.kick[0]; b < BAND.kick[1]; b++) eK += magC[b] * magC[b];
     enKick[c] = eK;
@@ -841,7 +849,12 @@ function analyze(left, right, sampleRate, tune) {
     const nextOnset = idx + 1 < bassRaw.length ? bassRaw[idx + 1].frame : F;
     while (g < F && g < nextOnset - 2 && enBass[g] > 0.35 * e0) g++;
     const dur = (g - p.frame) * HOP_T;
-    return { t: p.t, s: p.s, dur: dur >= 0.45 ? dur : 0 };
+    // perde: atak sonrasi 2-6. karelerin medyani (atak gecis gurultusunden kac)
+    const ps = [];
+    for (let k = p.frame + 2; k < Math.min(F, p.frame + 7); k++) ps.push(bassMidi[k]);
+    ps.sort((x, y) => x - y);
+    const pitch = ps.length ? Math.round(ps[ps.length >> 1]) : 0;
+    return { t: p.t, s: p.s, dur: dur >= 0.45 ? dur : 0, pitch };
   });
 
   progress('melody', 82);
