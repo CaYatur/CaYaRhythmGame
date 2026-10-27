@@ -100,12 +100,12 @@ npm start                   # http://localhost:3000 adresinde açılır
 
 ### Tahmin değil, ölçüm
 
-`tools/analysis-bench.mjs`, **gerçek worker'ı** Node'da yer gerçeğine karşı çalıştırır. Test malzemesi, sentetik altlıklar ve gerçek şarkılar üzerine bindirilmiş sentetik bir şarkıcıdır (glottal kaynak, sesli harf formantları, vibrato/jitter, ünsüzler). Ayrıca vokal **sayılmaması** gereken tuzaklar da vardır: düz synth lead, vibratolu synth lead ve merkez pad. Worker'daki tüm eşikler bununla ayarlandı.
+`tools/analysis-bench.mjs`, **gerçek worker'ı** Node'da yer gerçeğine karşı çalıştırır. Test malzemesi, sentetik altlıklar ve gerçek şarkılar üzerine bindirilmiş sentetik bir şarkıcıdır (glottal kaynak, sesli harf formantları, vibrato/jitter, ünsüzler). Ayrıca vokal **sayılmaması** gereken tuzaklar da vardır: düz synth lead, vibratolu synth lead ve merkez pad. Worker'daki tüm eşikler bununla ayarlandı; hızlı benchmark eşiklerin altına düşerse `npm test` başarısız olur. Gerçek vokaller ayrık kanal (stem) olmadan puanlanamadığından, gerçek şarkı satırları bir yaklaşık ölçümdür.
 
 | Ölçüt (v1 → v2) | v1 | v2 |
 | --- | --- | --- |
-| Gerçek miks altında vokal duyarlılığı | %65 | **%91** |
-| Vokal perde doğruluğu (±1 yarım ton, gerçek miks) | %59 | **%73** |
+| Vokal duyarlılığı, gerçek eşlik üzerinde sentetik şarkıcı | %65 | **%91** |
+| Vokal perde doğruluğu (±1 yarım ton, aynı set) | %59 | **%73** |
 | Vokal F1, sentetik | 0.53 | **0.84** |
 | Synth lead / pad'de yanlış "vokal" | 23.8 / dk | **2.9 / dk** |
 | Kick / trampet vuruş F1 | %61 / %28 | **%71 / %41** |

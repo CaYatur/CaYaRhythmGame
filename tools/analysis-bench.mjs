@@ -210,3 +210,22 @@ const summary = {
 console.log('\nOZET', Object.fromEntries(Object.entries(summary).map(([k, v]) => [k, +v.toFixed(3)])));
 report.scenarios = rows; report.summary = summary;
 if (jsonOut) writeFileSync(jsonOut, JSON.stringify(report, null, 2));
+
+// Regresyon kapisi (--quick = npm test / CI): deterministik seed-7 sonuclarinin
+// altinda pay birakan esikler. Motor degisikligi bunlari bozarsa test kalir.
+if (QUICK) {
+  const r = synth[0];
+  const decoyFp = (r.fpPerMin.flatLead + r.fpPerMin.vibLead + r.fpPerMin.pad) / 3;
+  const checks = [
+    ['vokal F1 >= 0.75', r.f1 >= 0.75],
+    ['vokal perde >= 0.85', r.pitchAcc >= 0.85],
+    ['tuzak FP/dk <= 8', decoyFp <= 8],
+    ['kick F1 >= 0.60', r.drum.kickF1 >= 0.6],
+    ['snare F1 >= 0.33', r.drum.snareF1 >= 0.33],
+    ['BPM hata <= 1', r.drum.bpmErr <= 1]
+  ];
+  let bad = 0;
+  for (const [name, ok] of checks) { console.log(`  ${ok ? '✓' : '✗'} ${name}`); if (!ok) bad++; }
+  if (bad) { console.log(`
+${bad} esik asildi`); process.exit(1); }
+}

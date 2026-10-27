@@ -98,12 +98,12 @@ npm start                   # serves on http://localhost:3000
 
 ### Measured, not guessed
 
-`tools/analysis-bench.mjs` runs the **real worker** headlessly against ground truth. The test material is a synthetic singer (glottal source, vowel formants, vibrato/jitter, consonants) mixed over synthetic beds and real songs, plus decoys that must **not** count as vocals: flat synth leads, vibrato synth leads and center pads. Every threshold in the worker was tuned on it.
+`tools/analysis-bench.mjs` runs the **real worker** headlessly against ground truth. The test material is a synthetic singer (glottal source, vowel formants, vibrato/jitter, consonants) mixed over synthetic beds and real songs, plus decoys that must **not** count as vocals: flat synth leads, vibrato synth leads and center pads. Every threshold in the worker was tuned on it, and `npm test` fails if the quick benchmark drops below its gates. Real vocals can't be scored without isolated stems, so treat the real-song rows as a proxy.
 
 | Metric (v1 → v2) | v1 | v2 |
 | --- | --- | --- |
-| Vocal recall under real mixes | 65% | **91%** |
-| Vocal pitch accuracy (±1 semitone, real mixes) | 59% | **73%** |
+| Vocal recall, synthetic singer over real backing tracks | 65% | **91%** |
+| Vocal pitch accuracy (±1 semitone, same set) | 59% | **73%** |
 | Vocal F1, synthetic | 0.53 | **0.84** |
 | False "vocals" on synth leads / pads | 23.8 / min | **2.9 / min** |
 | Kick / snare onset F1 | 61% / 28% | **71% / 41%** |

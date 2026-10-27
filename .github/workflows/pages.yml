@@ -1,9 +1,11 @@
 name: Deploy to GitHub Pages
 
 # main'e her push'ta: testler -> statik site paketi -> GitHub Pages
+# PR'larda yalniz test + paketleme calisir (yayin yok)
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -12,8 +14,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: pages-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -37,12 +39,14 @@ jobs:
       - run: node tools/build-pages.mjs
 
       - uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request'
 
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:
