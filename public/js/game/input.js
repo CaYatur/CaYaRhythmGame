@@ -214,8 +214,32 @@ export class Input {
     this.prevOptions = optOn;
   }
 
-  // Basarili notalarda cok hafif titresim + ozel efektler
+  // Motorlari dogrudan sur (0..1). Haptics karistiricisi 60 Hz'de cagirir.
+  // WebHID (DualSense) oncelikli; yoksa Gamepad API 'dual-rumble' (kisa sureli,
+  // karistirici canli degerleri ~60 ms'de bir yeniler).
+  setMotors(strong, weak) {
+    if (this.hid && this.hid.connected) {
+      clearTimeout(this.hid._timer);
+      this.hid.setMotors(strong * 255, weak * 255);
+      return;
+    }
+    const gp = this._gamepad();
+    if (!gp) return;
+    const va = gp.vibrationActuator;
+    try {
+      if (va && va.playEffect) {
+        if (strong <= 0 && weak <= 0) { if (va.reset) va.reset(); }
+        else va.playEffect('dual-rumble', { startDelay: 0, duration: 100, strongMagnitude: strong, weakMagnitude: weak });
+      } else {
+        const ha = gp.hapticActuators && gp.hapticActuators[0];
+        if (ha && ha.pulse && (strong > 0 || weak > 0)) ha.pulse(Math.max(strong, weak), 100);
+      }
+    } catch { /* destek yoksa sessizce gec */ }
+  }
+
+  // Titresim: Haptics bagliysa desen olarak calar; degilse eski tek darbe.
   rumble(kind) {
+    if (this.haptics) { this.haptics.play(kind); return; }
     const presets = {
       perfect: { duration: 40, weakMagnitude: 0.35, strongMagnitude: 0.0 },
       great: { duration: 32, weakMagnitude: 0.25, strongMagnitude: 0.0 },
