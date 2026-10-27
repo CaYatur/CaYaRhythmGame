@@ -415,6 +415,30 @@ function layoutLaneKeys() {
   }
 }
 
+// Yazi yiginini (isabet/kombo/kutlama) otoyolun SOL kenarinin disina hizala.
+// Kenar cizgisi iki derinlikten projekte edilip ekranin %30 yuksekligindeki
+// x'i bulunur. Yer yoksa (dar ekran) CSS varsayilani: otoyolun ustunde kucuk.
+function layoutSideHud() {
+  const el = $('hud-center');
+  if (!el || !state.engine || !state.engine.scene) return;
+  const near = state.engine.getLaneAnchors(0), far = state.engine.getLaneAnchors(-30);
+  if (near.length < 2 || far.length < 2) return;
+  const edge = (a) => ({ x: a[0].x - (a[1].x - a[0].x) * 0.62, y: a[0].y });
+  const e0 = edge(near), e1 = edge(far);
+  const y = window.innerHeight * 0.3;
+  const k = (y - e0.y) / (e1.y - e0.y);
+  const x = e0.x + k * (e1.x - e0.x) - 18;
+  // carpan halkasi (~130 px) ile cakismayacak kadar yer olmali
+  if (x > 300) {
+    el.classList.add('side');
+    el.style.left = x.toFixed(0) + 'px';
+    el.style.top = (y - 40).toFixed(0) + 'px';
+  } else {
+    el.classList.remove('side');
+    el.style.left = ''; el.style.top = '';
+  }
+}
+
 function updateGameControls(device) {
   const laneWrap = $('hud-lane-keys');
   if (!laneWrap) return;
@@ -434,6 +458,7 @@ function updateGameControls(device) {
   $('hud-boost-key').textContent = isPad ? 'R2' : t('kbd.space');
   $('hud-pause-key').querySelector('kbd').textContent = isPad ? 'Options' : t('kbd.esc');
   layoutLaneKeys();
+  layoutSideHud();
   laneWrap.classList.remove('flash');
   void laneWrap.offsetWidth;
   laneWrap.classList.add('flash');
@@ -560,7 +585,7 @@ function onScoringEvent(type, data) {
       hud.setMult(s.multiplier, s.multProgress, s.boostActive, s.noMistakes);
       hud.setAcc(s.accuracy());
       hud.setStars(s.stars);
-      state.engine.onNoteHit(data.note, data.judgment);
+      state.engine.onNoteHit(data.note, data.judgment, data.deltaMs);
       state.mixer.onHit();
       state.input.rumble(data.note.boost ? 'gold' : data.judgment);
       if (s.combo > 0 && s.combo % 50 === 0) {
@@ -1042,7 +1067,7 @@ function init() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && state.playing && !state.paused) pauseGame();
   });
-  window.addEventListener('resize', () => { if (state.playing) layoutLaneKeys(); });
+  window.addEventListener('resize', () => { if (state.playing) { layoutLaneKeys(); layoutSideHud(); } });
 
   // otomasyon/test kancasi
   window.__game = { state, startGame, buildChart, songTime, handleFile, settings };
