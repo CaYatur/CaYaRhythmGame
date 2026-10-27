@@ -1,5 +1,7 @@
 // CaYa Rhythm - Puanlama: vurus pencereleri, kombo, 1x-6x carpan, boost (x2),
-// performans metresi (bitirme/basarisizlik), yildizlar, zamanlama istatistikleri
+// performans metresi (bitirme/basarisizlik), yildizlar, zamanlama istatistikleri.
+// Nota turleri: tap, hold, lift (serit BIRAKILINCA degerlendirilir), roll (bar
+// boyunca tekrarlanan basislar), accent (Kusursuz/Harika'da +%50).
 
 export const WINDOWS = {
   perfect: 0.050,
@@ -14,6 +16,10 @@ const HOLD_BONUS = 50;          // tamamlama bonusu
 const MULT_STEPS = [0, 10, 20, 30, 40, 50]; // kombo esikleri -> 1x..6x
 const MAX_BARS = 4;             // boost bari sayisi
 const BOOST_PER_BAR = 5;        // bar basina boost suresi (sn) — 4 bar = 20 sn
+const ACCENT_BONUS = 0.5;       // vurgu notasi: Kusursuz/Harika'da +%50
+const ROLL_TICK = 20;           // rulo basisi basina (gerekenin 1.5 katina kadar)
+const ROLL_BONUS = 60;          // rulo tamamlama bonusu
+const ROLL_END_PAD = 0.06;      // rulo bitisinden sonra degerlendirme payi
 // performans metresi (0..1): isabet yukseltir, kacirma dusurur; 0 = sahne kaybedildi
 const METER_START = 0.6;
 const METER_GAIN = { perfect: 0.022, great: 0.016, good: 0.008 };
@@ -31,6 +37,13 @@ export class Scoring {
     this.failed = false;
     this.deltas = [];        // her isabetin zamanlama sapmasi (ms, + = gec)
     this.sectionStats = {};  // bolum -> { hit, miss, total }
+    this.watchRolls = new Set(); // basladi/baslayabilir rulolar (bitiste degerlendirilir)
+    const cnt = (f) => notes.filter(f).length;
+    this.typeStats = {
+      lift: { hit: 0, total: cnt(n => n.type === 'lift') },
+      roll: { hit: 0, total: cnt(n => n.type === 'roll') },
+      accent: { hit: 0, total: cnt(n => n.accent) }
+    };
     this.onEvent = onEvent || (() => {});
     this.score = 0;
     this.combo = 0;
@@ -64,6 +77,8 @@ export class Scoring {
       this.lanes[n.lane].push(i);
     });
     this.lanePtr = new Array(laneMax).fill(0);
+    this.rollsByLane = Array.from({ length: laneMax }, () => []);
+    for (const n of notes) if (n.type === 'roll') this.rollsByLane[n.lane].push(n);
   }
 
   get multiplier() {
@@ -204,6 +219,11 @@ export class Scoring {
   // (combo sıfırlanır). manual=false: boost taraması gibi otomatik (cezasız).
   hit(lane, t, manual = true, only = '', requireAtLine = false) {
     if (lane >= this.lanes.length) return null;
+    // rulo bari uzerindeyken her basis bir rulo vurusudur (ceza yok)
+    if (manual) {
+      const r = this._rollAt(lane, t);
+      if (r) { this._rollTick(r); return null; }
+    }
     const idxs = this.lanes[lane];
     let ptr = this.lanePtr[lane];
     // tuketilmis notalari atla
@@ -214,12 +234,15 @@ export class Scoring {
     for (let i = ptr; i < idxs.length; i++) {
       const n = this.notes[idxs[i]];
       if (n.state !== 'pending') continue;
+      if (n.type === 'lift' || n.type === 'roll') continue; // birakmada / rulo ile
       const dt = n.time - t;
       if (dt > WINDOWS.good) break; // cok ileride
       const adt = Math.abs(dt);
       if (adt <= WINDOWS.good && adt < bestDt) { best = n; bestDt = adt; }
     }
     if (!best) {
+      // birak notasina yakin basis: oyuncu birakmaya hazirlaniyor (ceza yok)
+      if (manual && this._liftNear(lane, t)) return null;
       if (manual) {
         this.wrongHits++;
         this.mistakes++;
@@ -244,24 +267,6 @@ export class Scoring {
     else if (bestDt <= WINDOWS.great) judgment = 'great';
     else judgment = 'good';
 
-    this.counts[judgment]++;
-    this._comboUp();
-    this.deltas.push(Math.round((t - best.time) * 1000));
-    const sec = this._sec(best);
-    sec.hit++; sec.total++;
-    if (judgment === 'perfect') sec.perfect++;
-    this._meter(METER_GAIN[judgment]);
-
-    // boost notasi: tap ise aninda kredi; hold ise tamamlaninca (_endHold).
-    // grup zaten bozulduysa boost vermez.
-    if (best.boost && !this.brokenGroups.has(best.boostGroup)) {
-      this.activeGroupId = best.boostGroup;
-      if (best.type !== 'hold') this._boostNoteHit(best);
-    }
-
-    const pts = BASE_POINTS[judgment] * this.effMultiplier;
-    this._addScore(pts);
-
     if (best.type === 'hold') {
       // Hold baslar; ya fiziksel basili tutma ya da aktif boost onu sürdürür
       // (update() tik dongusune bak).
@@ -272,10 +277,103 @@ export class Scoring {
     } else {
       best.state = 'hit';
     }
+    return this._credit(best, judgment, t);
+  }
 
-    const res = { note: best, judgment, deltaMs: Math.round((t - best.time) * 1000), score: Math.round(pts) };
+  // Bir notanin isabetini isle (tap/hold-kafasi/lift/rulo ortak):
+  // sayaclar, kombo, zamanlama, bolum, metre, boost kredisi, puan, olay.
+  // t === null: zamanlama sapmasi kaydedilmez (rulo).
+  _credit(n, judgment, t, extraPts = 0) {
+    this.counts[judgment]++;
+    this._comboUp();
+    if (t !== null) this.deltas.push(Math.round((t - n.time) * 1000));
+    const sec = this._sec(n);
+    sec.hit++; sec.total++;
+    if (judgment === 'perfect') sec.perfect++;
+    this._meter(METER_GAIN[judgment]);
+
+    // boost notasi: tap ise aninda kredi; hold ise tamamlaninca (_endHold).
+    // grup zaten bozulduysa boost vermez.
+    if (n.boost && !this.brokenGroups.has(n.boostGroup)) {
+      this.activeGroupId = n.boostGroup;
+      if (n.type !== 'hold') this._boostNoteHit(n);
+    }
+
+    const accented = n.accent && judgment !== 'good';
+    if (accented) this.typeStats.accent.hit++;
+    if (n.type === 'lift') this.typeStats.lift.hit++;
+    if (n.type === 'roll') this.typeStats.roll.hit++;
+    const base = n.type === 'roll' ? 0 : BASE_POINTS[judgment];
+    const pts = (base * (accented ? 1 + ACCENT_BONUS : 1) + extraPts) * this.effMultiplier;
+    this._addScore(pts);
+
+    const res = { note: n, judgment, deltaMs: t === null ? 0 : Math.round((t - n.time) * 1000), score: Math.round(pts), accent: accented };
     this.onEvent('hit', res);
     return res;
+  }
+
+  _missNote(n) {
+    n.state = 'missed';
+    this.counts.miss++;
+    this.mistakes++;
+    this._comboBreak();
+    const sec = this._sec(n);
+    sec.miss++; sec.total++;
+    this._meter(-METER_MISS);
+    if (n.boost) this._breakBoostGroup(n.boostGroup, 'miss');
+    this.onEvent('miss', { note: n });
+  }
+
+  // ---- birak (lift) notalari ----
+  _liftNear(lane, t) {
+    const idxs = this.lanes[lane];
+    for (let i = this.lanePtr[lane]; i < idxs.length; i++) {
+      const n = this.notes[idxs[i]];
+      if (n.time - t > 0.4) break;
+      if (n.type === 'lift' && n.state === 'pending' && Math.abs(n.time - t) <= 0.4) return n;
+    }
+    return null;
+  }
+
+  _liftJudge(lane, t) {
+    if (lane >= this.lanes.length) return null;
+    const idxs = this.lanes[lane];
+    let best = null, bd = Infinity;
+    for (let i = this.lanePtr[lane]; i < idxs.length; i++) {
+      const n = this.notes[idxs[i]];
+      if (n.time - t > WINDOWS.good) break;
+      if (n.type !== 'lift' || n.state !== 'pending') continue;
+      const d = Math.abs(n.time - t);
+      if (d <= WINDOWS.good && d < bd) { best = n; bd = d; }
+    }
+    if (!best) return null;
+    const judgment = bd <= WINDOWS.perfect ? 'perfect' : bd <= WINDOWS.great ? 'great' : 'good';
+    best.state = 'hit';
+    return this._credit(best, judgment, t);
+  }
+
+  // ---- rulo notalari ----
+  _rollAt(lane, t) {
+    for (const r of this.rollsByLane[lane] || []) {
+      if ((r.state === 'pending' || r.state === 'rolling') && t >= r.time - WINDOWS.good && t <= r.time + r.dur + ROLL_END_PAD) return r;
+    }
+    return null;
+  }
+
+  _rollTick(r) {
+    if (r.state === 'pending') { r.state = 'rolling'; r.presses = 0; this.watchRolls.add(r); }
+    r.presses++;
+    if (r.presses <= Math.ceil(r.need * 1.5)) this._addScore(ROLL_TICK * this.effMultiplier);
+    this.onEvent('rollTick', { note: r, presses: r.presses, need: r.need });
+  }
+
+  // rulo bitti: yeterli basis -> Kusursuz (+bonus), %60+ -> Iyi, aksi halde kacti
+  _resolveRoll(r) {
+    const p = r.presses || 0;
+    const judgment = p >= r.need ? 'perfect' : p >= Math.ceil(r.need * 0.6) ? 'good' : null;
+    if (!judgment) { this._missNote(r); return; }
+    r.state = 'hit';
+    this._credit(r, judgment, null, judgment === 'perfect' ? ROLL_BONUS : 0);
   }
 
   // Boost aktivasyonunda: o an vurus penceresindeki TAP notalarini otomatik vur
@@ -295,13 +393,16 @@ export class Scoring {
   // birakmasi yok sayilir — boost uzun notayi senin yerine sürdürür. Boost
   // butonu birakilirsa (boostHeld=false) bu kosul dusumez, hold normal biter.
   release(lane, t, boostHeld) {
-    if (this.boostActive && boostHeld) return;
-    for (const n of this.activeHolds) {
-      if (n.lane !== lane) continue;
-      const end = n.time + n.dur;
-      this._endHold(n, t >= end - 0.15);
-      return;
+    if (!(this.boostActive && boostHeld)) {
+      for (const n of this.activeHolds) {
+        if (n.lane !== lane) continue;
+        const end = n.time + n.dur;
+        this._endHold(n, t >= end - 0.15);
+        break;
+      }
     }
+    // birak notasi: serit birakildigi an degerlendirilir
+    this._liftJudge(lane, t);
   }
 
   _endHold(n, completed) {
@@ -321,18 +422,16 @@ export class Scoring {
     // kacirilan notalar
     while (this.missPtr < this.notes.length && this.notes[this.missPtr].time + WINDOWS.good < t) {
       const n = this.notes[this.missPtr];
-      if (n.state === 'pending') {
-        n.state = 'missed';
-        this.counts.miss++;
-        this.mistakes++;
-        this._comboBreak();
-        const sec = this._sec(n);
-        sec.miss++; sec.total++;
-        this._meter(-METER_MISS);
-        if (n.boost) this._breakBoostGroup(n.boostGroup, 'miss');
-        this.onEvent('miss', { note: n });
+      if (n.type === 'roll') {
+        // rulo gec baslanabilir: bitisinde degerlendirilir
+        if (n.state === 'pending' || n.state === 'rolling') this.watchRolls.add(n);
+      } else if (n.state === 'pending') {
+        this._missNote(n);
       }
       this.missPtr++;
+    }
+    for (const r of this.watchRolls) {
+      if (t > r.time + r.dur + ROLL_END_PAD) { this.watchRolls.delete(r); this._resolveRoll(r); }
     }
 
     // Boost uzun notalari senin yerine "basili tutar": boost aktifKEN ve boost
@@ -392,6 +491,7 @@ export class Scoring {
       wrongHits: this.wrongHits,
       fullCombo: this.counts.miss === 0 && this.judged() > 0,
       stars: this.stars,
+      typeStats: JSON.parse(JSON.stringify(this.typeStats)),
       failed: this.failed,
       deltas: this.deltas.slice(),
       sectionStats: { ...this.sectionStats },

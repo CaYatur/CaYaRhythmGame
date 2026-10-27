@@ -150,6 +150,39 @@ function renderCards() {
     btn.onclick = () => { state.difficulty = key; renderCards(); updateHints(); updateHiscore(); };
     diffWrap.appendChild(btn);
   }
+  renderLegend();
+}
+
+// nota turu simgeleri (oyundaki 3D sekillerin 2D karsiliklari)
+const NOTE_GLYPHS = {
+  tap: '<svg viewBox="0 0 18 14"><rect x="2" y="4" width="14" height="7" rx="2.5" fill="#35c4f0"/><rect x="5" y="6" width="8" height="3" rx="1.2" fill="#c9f2ff"/></svg>',
+  hold: '<svg viewBox="0 0 18 14"><rect x="7" y="0" width="4" height="9" fill="#35c4f0" opacity=".5"/><rect x="2" y="7" width="14" height="6" rx="2.5" fill="#35c4f0"/></svg>',
+  lift: '<svg viewBox="0 0 18 14"><rect x="2" y="6" width="14" height="7" rx="2.5" fill="#f0509b"/><path d="M5 9 L9 2 L13 9 L11 9 L9 5.5 L7 9 Z" fill="#fff"/></svg>',
+  roll: '<svg viewBox="0 0 18 14"><g fill="#ffd23d"><rect x="6" y="0" width="6" height="2"/><rect x="6" y="3.5" width="6" height="2"/></g><path d="M9 7 L16 10 L9 13 L2 10 Z" fill="#ffd23d"/></svg>',
+  accent: '<svg viewBox="0 0 18 14"><ellipse cx="9" cy="8" rx="8" ry="5" fill="none" stroke="#ffe9a8" stroke-width="1.6"/><rect x="4" y="6" width="10" height="4" rx="1.6" fill="#59d96b"/></svg>',
+  chord: '<svg viewBox="0 0 18 14"><rect x="1" y="5" width="6" height="5" rx="1.6" fill="#35c4f0"/><rect x="11" y="5" width="6" height="5" rx="1.6" fill="#59d96b"/><rect x="6" y="7" width="6" height="1.2" fill="#fff"/></svg>'
+};
+
+function renderLegend() {
+  const wrap = $('note-legend');
+  if (!wrap) return;
+  if (!state.analysis) { wrap.innerHTML = ''; return; }
+  const st = chartFor(state.mode, state.difficulty).stats;
+  const counts = {
+    tap: st.count - st.holds - st.lifts - st.rolls, hold: st.holds, lift: st.lifts,
+    roll: st.rolls, accent: st.accents, chord: st.chords
+  };
+  wrap.innerHTML = Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) =>
+    `<span class="nl-chip" title="${esc(t('note.' + k + '.desc'))}">${NOTE_GLYPHS[k]}${t('note.' + k)} <b>${n}</b></span>`).join('');
+}
+
+// yeni nota turlerini ilk karsilasmada bir kez acikla
+function introduceNoteTypes(stats) {
+  const seen = readJSON('caya-seen-notes', {});
+  for (const [k, n] of [['lift', stats.lifts], ['roll', stats.rolls]]) {
+    if (n > 0 && !seen[k]) { toast(t(k === 'lift' ? 'toast.newLift' : 'toast.newRoll'), 'ok'); seen[k] = true; }
+  }
+  writeJSON('caya-seen-notes', seen);
 }
 
 function updateHints() {
@@ -438,6 +471,7 @@ function startGame(practice = null, leadIn = 3) {
     return;
   }
   if (state.chart.stats.lowVocal && !practice) toast(t('toast.lowVocal'), 'warn');
+  introduceNoteTypes(state.chart.stats);
 
   const mx = mixer();
   mx.setVolume(settings.volume / 100);
@@ -532,9 +566,15 @@ function onScoringEvent(type, data) {
       if (s.combo > 0 && s.combo % 50 === 0) {
         state.engine.onComboMilestone();
         state.input.rumble('milestone');
+        hud.milestone(t('hud.comboMilestone', { n: s.combo }));
       }
       break;
     }
+    case 'rollTick':
+      hud.setScore(s.score);
+      state.engine.onRollTick(data.note);
+      state.input.rumble('good');
+      break;
     case 'miss':
       hud.setCombo(0);
       hud.judgment('miss', false);
@@ -717,6 +757,10 @@ function renderResults(res, isRecord, failed) {
     [t('stat.good'), res.counts.good],
     [t('stat.miss'), res.counts.miss + (res.wrongHits ? ` · ${res.wrongHits}✕` : '')]
   ];
+  for (const k of ['lift', 'roll', 'accent']) {
+    const ts = res.typeStats && res.typeStats[k];
+    if (ts && ts.total) stats.push([t('stat.' + k), `${ts.hit}/${ts.total}`]);
+  }
   $('res-stats').innerHTML = stats.map(([k, v]) => `<div class="cell"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
 
   // zamanlama histogrami: -150..+150 ms, 10 ms kutular

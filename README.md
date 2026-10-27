@@ -25,7 +25,15 @@ A browser rhythm game that turns any audio file into playable note charts for vo
 
 ### Gameplay
 - **Five instrument parts.** **Vocals**, **Lead**, **Bass** (lanes follow the bass pitch), **Drums** (kick / snare / cymbals) and **Full band**. Each card shows its note count and an intensity rating.
-- **Four difficulties.** Easy, Medium, Hard (4 lanes) and Master (5 lanes).
+- **Four difficulties.** Easy, Medium, Hard (4 lanes) and Master (5 lanes). Note density follows the song: intense sections get busier, calm ones lighter.
+- **Note types.**
+  - **Note** and **sustain** (hold).
+  - **Lift** (arrow): keep the lane held and release on the line. Generated from short sung or played notes.
+  - **Roll** (striped bar): tap rapidly for the whole bar. Generated from snare build-ups and fast repeats.
+  - **Accent** (ringed): +50% points on Perfect or Great.
+  - **Chords:** linked notes you press together.
+
+  The stage panel shows how many of each type the current chart has, with a how-to tooltip for each.
 - **Part feedback.** When you miss, *your* part drops out of the mix (vocal band, bass shelf or drum shelves), and it comes back as you hit again.
 - **Stage meter.** Hits fill it and misses drain it. Run it empty and you lose the stage (unless **No fail** is on). The crowd cheers or turns red with it.
 - **Stars.** Up to 5 stars plus gold stars, shown live in the HUD and on the results screen.
@@ -83,7 +91,7 @@ npm start                   # serves on http://localhost:3000
 
 | Script | What it does |
 | --- | --- |
-| `npm test` | Scoring tests + a quick analysis benchmark |
+| `npm test` | Scoring and note-type tests + a quick analysis benchmark |
 | `npm run bench` | Full analysis benchmark (adds real songs from `public/testsongs/*.mp3` if present; needs `ffmpeg`) |
 | `npm run build:pages` | Builds the static site into `_site/` (the same bundle that GitHub Pages serves) |
 

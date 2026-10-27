@@ -28,7 +28,8 @@ export class Hud {
       section: document.getElementById('hud-section'),
       delta: document.getElementById('hud-delta'),
       progSecs: document.getElementById('hud-progress-secs'),
-      practice: document.getElementById('hud-practice')
+      practice: document.getElementById('hud-practice'),
+      milestone: document.getElementById('hud-milestone')
     };
     this._judgeTimer = null;
     this._deltaTimer = null;
@@ -159,6 +160,15 @@ export class Hud {
       const f = gold ? 1 : Math.max(0, Math.min(1, v - i));
       this._starEls[i].style.setProperty('--f', (f * 100).toFixed(0) + '%');
     }
+  }
+
+  // buyuk kutlama yazisi (kombo kilometre taslari)
+  milestone(text) {
+    const el = this.el.milestone;
+    el.textContent = text;
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
   }
 
   // bolum degisimi bandi
