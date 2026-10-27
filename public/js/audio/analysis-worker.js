@@ -447,7 +447,10 @@ function segmentFromContour(opt) {
       const segLen = g - segStart;
       // perde sıçraması: segment başına göre >=2 yarım ton (tam ton) ve 3 kare
       // sürekli -> vibrato/glide (±yarım ton) sustain'i bölmesin
-      if (segLen >= 4 && Math.abs(path[g] - path[segStart]) >= 2) {
+      // tam oktav sicramasi (11-13) ayni sesli bolgede perde takibinin oktav
+      // kaymasidir, yeni nota degil -> bolme
+      const dj = Math.abs(path[g] - path[segStart]);
+      if (segLen >= 4 && dj >= 2 && !(dj >= 11 && dj <= 13)) {
         jump++;
         if (jump >= 3) { closeSeg(g - 2); jump = 0; }
       } else jump = 0;
@@ -834,10 +837,12 @@ function analyze(left, right, sampleRate, tune) {
     if (rise <= 1e-9) return true; // olculemez: tut
     return (e12 - e0) / rise < (tune.kickDecay || 0.35);
   });
-  // trampet: gurultulu (duz spektrumlu) transient; benchmark: gercek ~0.85, tonal ~0.5
+  // trampet: gurultulu (duz spektrumlu) transient; sentetik ~0.85, tonal ~0.5.
+  // Gercek miksteki katmanli trampet/clap daha az gurultulu: 0.72 gercek sarkilarda
+  // ~2-4 trampet/sn birakir (0.8 neredeyse hepsini siliyordu).
   const snares = refine(pickPeaks(fxSnare, { minSep: 8, mul: 1.4 }), (p) => {
     let fl = 0; for (let g = p.frame; g <= Math.min(F - 1, p.frame + 2); g++) fl = Math.max(fl, snFlat[g]);
-    return fl > (tune.snareFlat || 0.8);
+    return fl > (tune.snareFlat || 0.72);
   });
   const hats = pickPeaks(fxHat, { minSep: 5, mul: 1.45 });
   const bassRaw = pickPeaks(fxBass, { minSep: 14, mul: 1.4, meanW: 16 });
