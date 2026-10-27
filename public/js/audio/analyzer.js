@@ -1,6 +1,7 @@
 // CaYa Rhythm - Analiz koprusu (ana is parcacigi)
-// Dosyayi cozer, 22050 Hz stereoya yeniden ornekler, merkez/yan kanallari cikarir
-// (vokaller tipik olarak merkez kanaldadir) ve analizi Web Worker'a devreder.
+// Dosyayi cozer, 22050 Hz stereoya yeniden ornekler ve ham sol/sag kanallari
+// analiz Web Worker'ina devreder (worker kanal-arasi benzerlikle merkez/vokal
+// cikarimi yapar).
 
 const ANALYSIS_SR = 22050;
 
@@ -8,7 +9,8 @@ let worker = null;
 
 function getWorker() {
   if (!worker) {
-    worker = new Worker('/js/audio/analysis-worker.js');
+    // goreli yol: GitHub Pages alt dizininde (/CaYaRhythmGame/) de calisir
+    worker = new Worker(new URL('./analysis-worker.js', import.meta.url));
   }
   return worker;
 }
@@ -18,8 +20,8 @@ export async function decodeAudio(arrayBuffer, audioCtx) {
   return await audioCtx.decodeAudioData(arrayBuffer.slice(0));
 }
 
-// 22050 Hz'e yeniden ornekle, merkez=(L+R)/2 ve yan=(L-R)/2 dondur
-export async function resampleCenterSide(audioBuffer) {
+// 22050 Hz stereoya yeniden ornekle; {left, right} dondur (mono'da ikisi ayni)
+export async function resampleStereo(audioBuffer) {
   const frames = Math.ceil(audioBuffer.duration * ANALYSIS_SR);
   const off = new OfflineAudioContext(2, frames, ANALYSIS_SR);
   const src = off.createBufferSource();
@@ -27,18 +29,12 @@ export async function resampleCenterSide(audioBuffer) {
   src.connect(off.destination);
   src.start(0);
   const rendered = await off.startRendering();
-  const L = rendered.getChannelData(0);
-  const R = rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : L;
-  const center = new Float32Array(L.length);
-  const side = new Float32Array(L.length);
-  for (let i = 0; i < L.length; i++) {
-    center[i] = (L[i] + R[i]) * 0.5;
-    side[i] = (L[i] - R[i]) * 0.5;
-  }
-  return { center, side };
+  const left = rendered.getChannelData(0).slice();
+  const right = rendered.numberOfChannels > 1 ? rendered.getChannelData(1).slice() : left.slice();
+  return { left, right };
 }
 
-export function analyzeSamples(center, side, onProgress) {
+export function analyzeSamples(left, right, onProgress) {
   return new Promise((resolve, reject) => {
     const w = getWorker();
     const onMsg = (e) => {
@@ -62,8 +58,8 @@ export function analyzeSamples(center, side, onProgress) {
       reject(new Error('Analiz worker hatası: ' + (err.message || 'bilinmeyen')));
     };
     w.postMessage(
-      { cmd: 'analyze', center, side, sampleRate: ANALYSIS_SR },
-      [center.buffer, side.buffer]
+      { cmd: 'analyze', left, right, sampleRate: ANALYSIS_SR },
+      [left.buffer, right.buffer]
     );
   });
 }
@@ -73,7 +69,7 @@ export async function analyzeArrayBuffer(arrayBuffer, audioCtx, onProgress) {
   onProgress && onProgress('decoding', 2);
   const audioBuffer = await decodeAudio(arrayBuffer, audioCtx);
   onProgress && onProgress('resampling', 6);
-  const { center, side } = await resampleCenterSide(audioBuffer);
-  const analysis = await analyzeSamples(center, side, onProgress);
+  const { left, right } = await resampleStereo(audioBuffer);
+  const analysis = await analyzeSamples(left, right, onProgress);
   return { audioBuffer, analysis };
 }

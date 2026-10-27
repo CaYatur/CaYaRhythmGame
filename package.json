@@ -5,7 +5,9 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "make-test-song": "node tools/make-test-song.js"
+    "make-test-song": "node tools/make-test-song.js",
+    "test": "node tools/boost-hold-test.mjs && node tools/analysis-bench.mjs --quick",
+    "bench": "node tools/analysis-bench.mjs"
   },
   "keywords": [
     "rhythm-game",
