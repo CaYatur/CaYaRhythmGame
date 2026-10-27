@@ -77,6 +77,38 @@ function roundedSlab(w, d, h, r, bevel) {
   return geo;
 }
 
+// birak (lift) notasi ust isareti: yukari (otoyolda ileri) bakan ok/kosegen
+function chevronGeo(w, d, h) {
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2, -d / 2);
+  s.lineTo(0, d / 2);
+  s.lineTo(w / 2, -d / 2);
+  s.lineTo(w * 0.24, -d / 2);
+  s.lineTo(0, d * 0.02);
+  s.lineTo(-w * 0.24, -d / 2);
+  s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: h, bevelEnabled: false });
+  g.rotateX(-Math.PI / 2);   // sekil +Y -> -Z (ekranda yukari)
+  g.translate(0, -h / 2, 0);
+  return g;
+}
+
+// rulo bari dokusu: enine seritler (tekrar tekrar bas hissi)
+function stripeTexture() {
+  const c = document.createElement('canvas');
+  c.width = 8; c.height = 64;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, 8, 64);
+  for (let y = 0; y < 64; y += 16) {
+    g.fillStyle = 'rgba(255,255,255,0.95)'; g.fillRect(0, y, 8, 7);
+    g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(0, y + 7, 8, 9);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(1, 7);
+  return t;
+}
+
 // spot isik konisi icin dikey solma dokusu
 function beamTexture() {
   const c = document.createElement('canvas');
@@ -287,12 +319,27 @@ export class Engine {
     this.headGeo = roundedSlab(LANE_W * 0.7, 0.42, 0.12, 0.06, 0.035);
     this.headTopGeo = roundedSlab(LANE_W * 0.5, 0.24, 0.08, 0.03, 0.015);
     this.tailGeo = new THREE.BoxGeometry(0.52, 0.06, 1); // z olcegi nota basina ayarlanir
+    // ozel nota sekilleri
+    this.liftTopGeo = chevronGeo(LANE_W * 0.46, 0.3, 0.07);
+    this.rollHeadGeo = new THREE.OctahedronGeometry(0.36, 0);
+    this.rollHeadGeo.scale(1.55, 0.42, 0.95);
+    this.accentGeo = new THREE.TorusGeometry(0.5, 0.045, 8, 40);
+    this.accentGeo.rotateX(Math.PI / 2);
+    this.accentGeo.scale(1.45, 1, 0.82);
+    this.chordGeo = new THREE.BoxGeometry(1, 0.035, 0.09);
+    this.liftTopMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.25, roughness: 0.2 });
+    this.accentMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.chordMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false });
+    this.stripeTex = stripeTexture();
+    this.rollTailMats = LANE_COLORS.slice(0, laneCount).map(c =>
+      new THREE.MeshBasicMaterial({ color: c, map: this.stripeTex, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.pool = [];
     this.meshByNote = new Map();
 
     // efekt havuzlari
     this._initRings();
     this._initParticles();
+    this._initBeams();
 
     // beat izgarasi (direk nabzi icin)
     this.beatTimes = [];
@@ -359,21 +406,41 @@ export class Engine {
       }));
       sprite.scale.set(1.8, 1.8, 1);
       sprite.visible = false;
-      this.scene.add(head); this.scene.add(tail); this.scene.add(sprite);
-      item = { head, top, tail, sprite };
+      const ring = new THREE.Mesh(this.accentGeo, this.accentMat);
+      ring.position.y = 0.02;
+      head.add(ring);
+      const bar = new THREE.Mesh(this.chordGeo, this.chordMat);
+      bar.visible = false;
+      this.scene.add(head); this.scene.add(tail); this.scene.add(sprite); this.scene.add(bar);
+      item = { head, top, tail, sprite, ring, bar };
     }
     const lane = note.lane;
+    const type = note.type;
+    // govde sekli: rulo = yassi elmas; digerleri pahli blok
+    item.head.geometry = type === 'roll' ? this.rollHeadGeo : this.headGeo;
     item.head.material = note.boost ? this.boostMat : this.noteMats[lane];
-    item.top.material = note.boost ? this.boostTopMat : this.noteTopMats[lane];
+    // ust isaret: lift = beyaz ok; rulo = yok; digerleri parlak plaka
+    item.top.visible = type !== 'roll';
+    item.top.geometry = type === 'lift' ? this.liftTopGeo : this.headTopGeo;
+    item.top.material = type === 'lift' ? this.liftTopMat : (note.boost ? this.boostTopMat : this.noteTopMats[lane]);
+    item.top.position.y = type === 'lift' ? 0.085 : 0.075;
     item.head.visible = true;
     item.head.scale.setScalar(note.boost ? 1.12 : 1);
     item.sprite.visible = !!note.boost;
-    if (note.type === 'hold') {
-      item.tail.material = this.tailMats[lane];
+    item.ring.visible = !!note.accent;
+    if (type === 'hold' || type === 'roll') {
+      item.tail.material = type === 'roll' ? this.rollTailMats[lane] : this.tailMats[lane];
       item.tail.visible = true;
-      item.tail.scale.z = Math.max(0.01, note.dur * this.speed);
+      item.tail.scale.set(type === 'roll' ? 1.9 : 1, 1, Math.max(0.01, note.dur * this.speed));
     } else {
       item.tail.visible = false;
+    }
+    // akor: en soldaki notadan en sagdakine baglanti cubugu
+    item.bar.visible = !!note.chordLead;
+    if (note.chordLead) {
+      const [a, b] = note.chordLanes;
+      item.bar.scale.x = Math.abs(this._laneX(b) - this._laneX(a));
+      item.barX = (this._laneX(a) + this._laneX(b)) / 2;
     }
     this.meshByNote.set(note.id, item);
     return item;
@@ -385,6 +452,7 @@ export class Engine {
     item.head.visible = false;
     item.tail.visible = false;
     item.sprite.visible = false;
+    item.bar.visible = false;
     this.meshByNote.delete(note.id);
     this.pool.push(item);
   }
@@ -465,12 +533,68 @@ export class Engine {
     if (note.boost) this._spawnRing(lane, 0xffffff, 1.2); // boost notasi ozel ani
     const count = judgment === 'perfect' ? 6 : judgment === 'great' ? 4 : 2;
     this._burst(x, 0.4, RECEPTOR_Z, color, count, judgment === 'perfect' ? 0.7 : 0.55);
+    // isik sutunu: kusursuz/vurgu daha parlak
+    this._spawnBeam(lane, note.accent ? 0xffe9a8 : color, judgment === 'perfect' ? 1 : 0.6);
+    if (note.accent && judgment !== 'good') {
+      this._spawnRing(lane, 0xffd36b, 1.5);
+      this._burst(x, 0.5, RECEPTOR_Z, 0xffd36b, 12, 1.05);
+    }
+    if (note.type === 'lift') this._burst(x, 0.5, RECEPTOR_Z - 0.4, 0xffffff, 8, 0.9);
+    if (note.type === 'roll') { this._spawnRing(lane, color, 1.4); this._burst(x, 0.4, RECEPTOR_Z, color, 16, 1); }
     const r = this.receptors[lane];
     if (r) r.glowT = judgment === 'perfect' ? 1 : 0.7;
     if (note.type !== 'hold') this._releaseMesh(note);
     else {
       const item = this.meshByNote.get(note.id);
       if (item) item.tail.material = this.tailActiveMats[lane];
+    }
+  }
+
+  // rulo basisi: kucuk kivilcim + receptor nabzi
+  onRollTick(note) {
+    const x = this._laneX(note.lane);
+    this._burst(x, 0.35, RECEPTOR_Z, LANE_COLORS[note.lane], 3, 0.6);
+    const r = this.receptors[note.lane];
+    if (r) r.glowT = 0.9;
+    note._tickT = 1;
+  }
+
+  // ---- isabet isik sutunlari ----
+  _initBeams() {
+    this.beams = [];
+    const tex = beamTexture();
+    tex.flipY = false; // parlak uc altta (receptor), yukari dogru solar
+    const geo = new THREE.PlaneGeometry(LANE_W * 0.58, 4.2);
+    geo.translate(0, 2.1, 0);
+    for (let i = 0; i < 12; i++) {
+      const mat = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      const m = new THREE.Mesh(geo, mat);
+      m.visible = false;
+      this.scene.add(m);
+      this.beams.push({ m, mat, life: 0, max: 0.26, peak: 1 });
+    }
+  }
+
+  _spawnBeam(lane, color, power) {
+    if (!this.beams) return;
+    const b = this.beams.find(b => b.life <= 0) || this.beams[0];
+    b.m.position.set(this._laneX(lane), 0.05, RECEPTOR_Z);
+    b.mat.color.set(color);
+    b.peak = 0.38 * power;
+    b.life = b.max;
+    b.m.scale.set(1, 0.6 + power * 0.6, 1);
+    b.m.visible = true;
+  }
+
+  _updateBeams(dt) {
+    if (!this.beams) return;
+    for (const b of this.beams) {
+      if (b.life <= 0) continue;
+      b.life -= dt;
+      const k = Math.max(0, b.life / b.max);
+      b.mat.opacity = b.peak * k;
+      b.m.scale.x = 1 + (1 - k) * 0.25;
+      if (b.life <= 0) b.m.visible = false;
     }
   }
 
@@ -554,10 +678,19 @@ export class Engine {
     // aktif nota konumlari
     for (const [id, item] of this.meshByNote) {
       const n = this.notes[id];
-      const zHead = n.state === 'holding' ? RECEPTOR_Z : RECEPTOR_Z - (n.time - songT) * this.speed;
+      const pinned = n.state === 'holding' || (n.state === 'rolling' && songT >= n.time);
+      const zHead = pinned ? RECEPTOR_Z : RECEPTOR_Z - (n.time - songT) * this.speed;
       const x = this._laneX(n.lane);
       item.head.position.set(x, NOTE_Y, zHead);
       item.sprite.position.set(x, NOTE_Y + 0.1, zHead);
+      if (item.bar.visible) item.bar.position.set(item.barX, NOTE_Y - 0.03, zHead);
+      if (n.type === 'roll') {
+        // rulo kafasi doner; rulo sirasinda basis basina ziplar
+        item.head.rotation.y = songT * 3;
+        const kick = n.state === 'rolling' ? (n._tickT || 0) : 0;
+        item.head.scale.setScalar(1 + kick * 0.35);
+        n._tickT = Math.max(0, kick - dt * 8);
+      }
       if (item.tail.visible) {
         const zEnd = RECEPTOR_Z - (n.time + n.dur - songT) * this.speed;
         const zNear = Math.min(zHead, RECEPTOR_Z);
@@ -566,13 +699,16 @@ export class Engine {
       }
       // gecip giden (kacirilmis) notalari temizle
       const zTailEnd = RECEPTOR_Z - (n.time + (n.dur || 0) - songT) * this.speed;
-      if (zTailEnd > RECEPTOR_Z + 5 || (n.state !== 'pending' && n.state !== 'holding' && n.state !== 'missed')) {
+      if (zTailEnd > RECEPTOR_Z + 5 || (n.state !== 'pending' && n.state !== 'holding' && n.state !== 'rolling' && n.state !== 'missed')) {
         this._releaseMesh(n);
       }
     }
 
     // boost notasi nabzi (paylasimli beyaz materyal -> hepsi senkron parlar)
     this.boostMat.emissiveIntensity = 0.95 + 0.35 * Math.sin(songT * 6);
+    this.stripeTex.offset.y = (songT * 4) % 1;          // rulo seritleri akar
+    this.accentMat.opacity = 0.7 + 0.3 * Math.sin(songT * 9); // vurgu halkasi nabzi
+    this._updateBeams(dt);
 
     // receptor durumlari
     for (let i = 0; i < this.receptors.length; i++) {

@@ -25,7 +25,15 @@ Herhangi bir ses dosyasını vokal, lead, bas, davul ya da tam grup için çalı
 
 ### Oynanış
 - **Beş enstrüman parçası.** **Vokal**, **Lead**, **Bas** (şeritler bas perdesini izler), **Davul** (kick / trampet / zil) ve **Tam grup**. Her kartta nota sayısı ve yoğunluk göstergesi bulunur.
-- **Dört zorluk.** Kolay, Orta, Zor (4 şerit) ve Usta (5 şerit).
+- **Dört zorluk.** Kolay, Orta, Zor (4 şerit) ve Usta (5 şerit). Nota yoğunluğu şarkıyı izler: yoğun bölümler daha dolu, sakin bölümler daha hafiftir.
+- **Nota türleri.**
+  - **Nota** ve **uzun nota** (basılı tut).
+  - **Bırak** (ok): şeridi basılı tut ve ok çizgiye gelince bırak. Kısa süren söylenen ya da çalınan notalardan üretilir.
+  - **Rulo** (çizgili bar): bar boyunca hızlı hızlı bas. Trampet build-up'larından ve hızlı tekrarlardan üretilir.
+  - **Vurgu** (halkalı): Kusursuz veya Harika'da +%50 puan.
+  - **Akor:** birbirine bağlı, aynı anda basılan notalar.
+
+  Sahne panelinde mevcut haritada her türden kaç tane olduğu ve nasıl çalınacağını anlatan ipuçları görünür.
 - **Parça geri bildirimi.** Kaçırdığında *senin* parçan miksten kısılır (vokal bandı, bas rafı ya da davul rafları); isabetlerle geri gelir.
 - **Sahne metresi.** İsabetle dolar, kaçırmayla boşalır. Biterse sahneyi kaybedersin (**Kaybetme yok** açık değilse). Seyirci de buna göre coşar ya da kırmızıya döner.
 - **Yıldızlar.** 5 yıldız ve altın yıldızlar; HUD'da canlı, sonuç ekranında özet olarak.
@@ -85,7 +93,7 @@ npm start                   # http://localhost:3000 adresinde açılır
 
 | Komut | Ne yapar |
 | --- | --- |
-| `npm test` | Puanlama testleri + hızlı analiz benchmark'ı |
+| `npm test` | Puanlama ve nota türü testleri + hızlı analiz benchmark'ı |
 | `npm run bench` | Tam analiz benchmark'ı (`public/testsongs/*.mp3` varsa gerçek şarkılar da eklenir; `ffmpeg` gerekir) |
 | `npm run build:pages` | Statik siteyi `_site/` klasörüne paketler (GitHub Pages'in sunduğu paketin aynısı) |
 

@@ -696,6 +696,33 @@ kbd {
 .toast.ok { border-color: rgba(89, 217, 107, 0.5); }
 .toast.warn { border-color: rgba(255, 85, 102, 0.5); }
 
+/* ---------- NOTA TURLERI (v2.1) ---------- */
+.note-legend { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.7rem; }
+.nl-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem; cursor: help;
+  padding: 0.25rem 0.55rem 0.25rem 0.4rem; border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--hair);
+  font-size: 0.74rem; color: var(--text);
+}
+.nl-chip b { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); font-weight: 600; }
+.nl-chip svg { width: 18px; height: 14px; flex: 0 0 auto; }
+.hud-milestone {
+  position: absolute; left: 50%; top: 20%; transform: translateX(-50%);
+  font-size: 2.6rem; font-weight: 900; letter-spacing: 0.12em; white-space: nowrap;
+  background: linear-gradient(90deg, var(--accent2), #fff, var(--pink));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 18px rgba(124, 77, 255, 0.8));
+  opacity: 0; pointer-events: none;
+}
+.hud-milestone.show { animation: milestoneIn 1.3s ease-out; }
+@keyframes milestoneIn {
+  0% { opacity: 0; transform: translateX(-50%) scale(0.6); }
+  15% { opacity: 1; transform: translateX(-50%) scale(1.12); }
+  30% { transform: translateX(-50%) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-14px); }
+}
+
 @media (max-width: 640px) {
   #hud-mult-wrap { left: 10px; transform: scale(0.75); transform-origin: left center; }
   #hud-left { left: 44px; }
