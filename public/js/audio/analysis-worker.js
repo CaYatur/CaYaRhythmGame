@@ -9,6 +9,10 @@
 //   5. Harmonik toplam belirginligi + ust-oktav duzeltmesi + Viterbi perde takibi
 //   6. Ince (cent) perde + tini ozellikleri -> insan sesi kapisi:
 //      formant izi, perde mikro-hareketi, harmoniklik
+//   6b. Vokal PERDESI tam harmonik merkez spektrumdan (melodi yolu), vokal
+//      VARLIGI (voicing) ise melodi gucu + vokal on plan gucu + harmoniklik
+//      birlesik skorundan + mutlak vokal tabanindan gelir (gercek vokal
+//      benchmark'i: tools/realvocal-bench.mjs, Demucs referansli)
 //   7. Konturu notalara bol (perde sicramasi + cukurlu enerji yeniden vurusu)
 //
 // Perkusyon/tempo/yapi:
@@ -33,10 +37,10 @@ const MED_H = (MED_K - 1) / 2;
 const ONSET_OFFSET = 0.033; // STFT grup gecikmesi kalibrasyonu (kalibre edildi)
 
 // Perde aday aralığı (Viterbi durumları): A2(110Hz) .. C6(1047Hz)
-const MLO = 45, MHI = 84;
+const MLO = 40, MHI = 84; // E2 .. C6 (erkek/rap vokalleri A2'ye kadar iner)
 const NSTATE = MHI - MLO + 1;
 // Vokal için alt sınır (C3, 131Hz): tipik bas bölgesini dışla
-const VOC_LO_STATE = 50 - MLO; // MIDI 50
+const VOC_LO_STATE = 50 - MLO; // vokal varsayilan alt sinir (tune.vocLo ile)
 const WHITEN_W = 20; // beyazlatma penceresi (bin)
 let DEBUG = false; // benchmark: segment ozelliklerini sonuca ekle
 
@@ -379,10 +383,18 @@ function segmentFromContour(opt) {
   const atk = opt.energy || salStr;
   // voicing: mutlak ağırlıklı salience gücüne göre. Bas/eşlik perde-ağırlığıyla
   // zaten bastırıldığından, melodik kaynak sustuğunda güç düşer -> unvoiced.
-  const strFloor = 0.18 * p95(salStr);
+  const strFloor = (opt.floor || 0.18) * p95(salStr);
 
   const voiced = new Uint8Array(F);
-  for (let i = 0; i < F; i++) voiced[i] = salStr[i] > strFloor ? 1 : 0;
+  if (opt.voiceScore) {
+    // hazir voicing skoru (0..1) verilmisse onu kullan (vokal hatti)
+    // + mutlak taban: goreli skor yalniz vokal on plani olan karelerde karar verir
+    // (enstrumantal kopru/drop'larda "her bolumun ustu vokal" olmasin)
+    const absFloor = (opt.absFloor != null ? opt.absFloor : 0.15) * p95(salStr);
+    for (let i = 0; i < F; i++) voiced[i] = opt.voiceScore[i] > opt.voiceThr && salStr[i] > absFloor ? 1 : 0;
+  } else {
+    for (let i = 0; i < F; i++) voiced[i] = salStr[i] > strFloor ? 1 : 0;
+  }
   // küçük boşlukları kapat (<=3 kare)
   for (let i = 1; i < F - 3; i++) {
     if (!voiced[i] && voiced[i - 1]) {
@@ -478,7 +490,7 @@ function segmentFromContour(opt) {
   const ranks = percentileRanks(kept.map(s => s.rawS));
   return kept.map((s, k) => {
     const o = { t: Math.max(0, s.t), s: ranks[k], pitch: s.pitch, dur: s.dur >= 0.32 ? Math.min(s.dur, 8) : 0 };
-    if (s.feat && DEBUG) o.feat = s.feat;
+    if (DEBUG) { if (s.feat) o.feat = s.feat; o.len = +s.dur.toFixed(3); }
     return o;
   });
 }
@@ -653,6 +665,10 @@ function analyze(left, right, sampleRate, tune) {
   // vokal (segment bazlı REPET): salience matrisi + güç + ham perde
   const vocSal = new Float32Array(F * NSTATE);
   const vocStr = new Float32Array(F), vocRawMidi = new Float32Array(F);
+  // vokal perde-register agirligi: merkez/genislik/alt sinir ayarlanabilir
+  const vocLo = tune.vocLo || 50;
+  const vocPw = pitchWeights(tune.vocCenter || 67, tune.vocSigma || 11, vocLo);
+  const vocLoState = Math.max(0, vocLo - MLO);
   const vocFine = new Float32Array(F), vocFormant = new Float32Array(F); // ince perde + formant izi
   const vocHarm = new Float32Array(F); // harmoniklik (0..1)
   const vocEn = new Float32Array(F);   // genis bant vokal on plan enerjisi (yeniden vurus tespiti)
@@ -688,14 +704,14 @@ function analyze(left, right, sampleRate, tune) {
       }
       salienceRow(vm, cand, tmpSal);
       // ham tepe: guc (voicing) + vokal ozellikleri bunun uzerinden
-      let bestK = VOC_LO_STATE, bestV = 0;
+      let bestK = vocLoState, bestV = 0;
       for (let k = 0; k < NSTATE; k++) {
-        const sv = tmpSal[k] * VOC_PW[k]; // algısal register ağırlığı (+ bas kesimi)
+        const sv = tmpSal[k] * vocPw[k]; // algısal register ağırlığı (+ bas kesimi)
         if (sv > bestV) { bestV = sv; bestK = k; }
       }
       // perde takibi icin oktav-duzeltilmis belirginlik
       if (tune.octCheck !== false) octavePenalty(vm, cand, tmpSal);
-      for (let k = 0; k < NSTATE; k++) vocSal[gf * NSTATE + k] = tmpSal[k] * VOC_PW[k];
+      for (let k = 0; k < NSTATE; k++) vocSal[gf * NSTATE + k] = tmpSal[k] * vocPw[k];
       vocStr[gf] = bestV; // mutlak ağırlıklı güç (voicing için)
       vocRawMidi[gf] = MLO + bestK;
       fineAnalyze(vm, bestK, _fine);
@@ -873,7 +889,20 @@ function analyze(left, right, sampleRate, tune) {
 
   progress('vocal', 90);
   normalizeSal(vocSal, F);
-  const vocPath = trackPitchDP(vocSal, F, 0.08);
+  // Vokal PERDESI icin birlesik belirginlik: REPET'li vokal on plani (kim
+  // soyluyor) + tam harmonik merkez spektrum (REPET tekrar eden nakaratlari ve
+  // stereo yankiyi da kirptigi icin perdeyi kaybeder). Gercek vokal
+  // benchmark'inda (Demucs referansi) tam spektrum perdede belirgin ustun.
+  const vocPitchMode = tune.vocPitch || 'mel';
+  if (vocPitchMode === 'comb') {
+    const w = tune.vocW != null ? tune.vocW : 0.6;
+    for (let f = 0; f < F; f++) {
+      const base = f * NSTATE;
+      for (let k = 0; k < NSTATE; k++) vocSal[base + k] = melSal[base + k] * vocPw[k] + w * vocSal[base + k];
+    }
+    normalizeSal(vocSal, F);
+  }
+  const vocPath = vocPitchMode === 'mel' ? melPath : trackPitchDP(vocSal, F, 0.08);
   const vocFlux = new Float32Array(F);
   for (let i = 1; i < F; i++) { const d = vocEn[i] - vocEn[i - 1]; vocFlux[i] = d > 0 ? d : 0; }
   const vocFluxPeaks = new Set(pickPeaks(vocFlux, { minSep: 8, mul: 1.4, meanW: 14 }).filter(p => p.s >= 0.3).map(p => p.frame));
@@ -882,6 +911,10 @@ function analyze(left, right, sampleRate, tune) {
     feats: { fineMidi: vocFine, formant: vocFormant, harm: vocHarm },
     energy: vocEn,
     gate: tune.noGate ? null : humanGate,
+    floor: tune.vocFloor,
+    voiceScore: tune.vocVoicing === false ? null : voicingScore(melStr, vocStr, vocHarm, F),
+    voiceThr: tune.vocVoice != null ? tune.vocVoice : 0.4, // gercek vokal benchmark'iyla secildi
+    absFloor: tune.vocAbs,
     tOffset: VOCAL_T_OFFSET
   });
 
@@ -906,7 +939,7 @@ function analyze(left, right, sampleRate, tune) {
     duration,
     sections: structure.sections,
     energy: structure.energy, // 10 Hz, 0..1 yogunluk egrisi
-    ...(DEBUG ? { debug: { snFlat, enKick, hop: HOP_T } } : {})
+    ...(DEBUG ? { debug: { snFlat, enKick, hop: HOP_T, vocPath: Array.from(vocPath, k => k + MLO), vocRaw: Array.from(vocRawMidi), vocFine: Array.from(vocFine), melPath: Array.from(melPath, k => k + MLO), vocStr: Array.from(vocStr), melStr: Array.from(melStr), vocEn: Array.from(vocEn), vocHarm: Array.from(vocHarm), vocFormant: Array.from(vocFormant) } } : {})
   };
 }
 
@@ -1035,6 +1068,38 @@ function refine(peaks, keep) {
   const out = peaks.filter(keep);
   const ranks = percentileRanks(out.map(p => p.s));
   return out.map((p, k) => ({ frame: p.frame, t: p.t, s: ranks[k] }));
+}
+
+// Vokal voicing skoru (0..1): ~170 ms yumusatilmis melodi gucu (x2), REPET'li
+// vokal on plan gucu ve harmoniklik ozelliklerinin sarki-ici yuzdelik ortalamasi.
+// Gercek vokal benchmark'inda (Demucs referansi, 8 sarki) tek tek ozelliklerden
+// daha ayirt edici (AUC 0.806; melodi gucu tek basina 0.794, eski vokal gucu 0.771).
+function voicingScore(melStr, vocStr, vocHarm, F) {
+  const W = 15;
+  const smooth = (a) => {
+    const o = new Float32Array(F);
+    let s = 0;
+    for (let i = 0; i < F; i++) {
+      s += a[i]; if (i >= W) s -= a[i - W];
+      o[i] = s / Math.min(i + 1, W);
+    }
+    // merkezle (yarim pencere geri kaydir)
+    const c = new Float32Array(F), h = W >> 1;
+    for (let i = 0; i < F; i++) c[i] = o[Math.min(F - 1, i + h)];
+    return c;
+  };
+  const rank = (a) => {
+    const idx = new Uint32Array(F);
+    for (let i = 0; i < F; i++) idx[i] = i;
+    idx.sort((x, y) => a[x] - a[y]);
+    const r = new Float32Array(F);
+    for (let k = 0; k < F; k++) r[idx[k]] = k / Math.max(1, F - 1);
+    return r;
+  };
+  const m = rank(smooth(melStr)), v = rank(smooth(vocStr)), h = rank(smooth(vocHarm));
+  const out = new Float32Array(F);
+  for (let i = 0; i < F; i++) out[i] = (2 * m[i] + v[i] + h[i]) / 4;
+  return out;
 }
 
 function normalizeSal(sal, F) {

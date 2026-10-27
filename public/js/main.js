@@ -8,6 +8,7 @@ import { Input, KEY_HINT_4, KEY_HINT_5 } from './game/input.js';
 import { DualSenseHID } from './game/dualsense-hid.js';
 import { Engine } from './game/engine3d.js';
 import { Hud, toast, sectionColor } from './game/hud.js';
+import { Haptics } from './game/haptics.js';
 import { saveSong, listSongs, loadSong, deleteSong, songId, ANALYSIS_VERSION } from './game/library.js';
 import { t, getLang, setLang, applyStatic, numLocale, pct } from './i18n.js';
 
@@ -25,7 +26,7 @@ function readJSON(key, fallback) {
 function writeJSON(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }
 
 const settings = Object.assign(
-  { noteSpeed: 1.0, latency: 0, volume: 80, feedback: true, noFail: false, lefty: false },
+  { noteSpeed: 1.0, latency: 0, volume: 80, rumble: 80, feedback: true, noFail: false, lefty: false },
   readJSON('caya-settings', {})
 );
 function saveSettings() { writeJSON('caya-settings', settings); }
@@ -72,6 +73,7 @@ const state = {
   engine: null,
   scoring: null,
   input: null,
+  haptics: null,
   mixer: null,
   hid: new DualSenseHID(),
   hud: new Hud(),
@@ -286,6 +288,7 @@ function syncSettingsLabels() {
   $('set-speed-val').textContent = (+speed.value).toFixed(2).replace(/0$/, '') + 'x';
   $('set-latency-val').textContent = latency.value + ' ms';
   $('set-volume-val').textContent = pct(volume.value);
+  $('set-rumble-val').textContent = pct($('set-rumble').value);
 }
 
 function bindSettings() {
@@ -299,6 +302,12 @@ function bindSettings() {
   volume.oninput = () => {
     settings.volume = +volume.value; syncSettingsLabels(); saveSettings();
     if (state.mixer) state.mixer.setVolume(settings.volume / 100);
+  };
+  const rumble = $('set-rumble');
+  rumble.value = settings.rumble;
+  rumble.oninput = () => {
+    settings.rumble = +rumble.value; syncSettingsLabels(); saveSettings();
+    if (state.haptics) { state.haptics.setStrength(settings.rumble / 100); state.haptics.play('great'); }
   };
   const toggle = (id, key, after) => {
     const el = $(id);
@@ -415,6 +424,30 @@ function layoutLaneKeys() {
   }
 }
 
+// Yazi yiginini (isabet/kombo/kutlama) otoyolun SOL kenarinin disina hizala.
+// Kenar cizgisi iki derinlikten projekte edilip ekranin %30 yuksekligindeki
+// x'i bulunur. Yer yoksa (dar ekran) CSS varsayilani: otoyolun ustunde kucuk.
+function layoutSideHud() {
+  const el = $('hud-center');
+  if (!el || !state.engine || !state.engine.scene) return;
+  const near = state.engine.getLaneAnchors(0), far = state.engine.getLaneAnchors(-30);
+  if (near.length < 2 || far.length < 2) return;
+  const edge = (a) => ({ x: a[0].x - (a[1].x - a[0].x) * 0.62, y: a[0].y });
+  const e0 = edge(near), e1 = edge(far);
+  const y = window.innerHeight * 0.3;
+  const k = (y - e0.y) / (e1.y - e0.y);
+  const x = e0.x + k * (e1.x - e0.x) - 18;
+  // carpan halkasi (~130 px) ile cakismayacak kadar yer olmali
+  if (x > 300) {
+    el.classList.add('side');
+    el.style.left = x.toFixed(0) + 'px';
+    el.style.top = (y - 40).toFixed(0) + 'px';
+  } else {
+    el.classList.remove('side');
+    el.style.left = ''; el.style.top = '';
+  }
+}
+
 function updateGameControls(device) {
   const laneWrap = $('hud-lane-keys');
   if (!laneWrap) return;
@@ -434,6 +467,7 @@ function updateGameControls(device) {
   $('hud-boost-key').textContent = isPad ? 'R2' : t('kbd.space');
   $('hud-pause-key').querySelector('kbd').textContent = isPad ? 'Options' : t('kbd.esc');
   layoutLaneKeys();
+  layoutSideHud();
   laneWrap.classList.remove('flash');
   void laneWrap.offsetWidth;
   laneWrap.classList.add('flash');
@@ -517,6 +551,9 @@ function startGame(practice = null, leadIn = 3) {
   state.resuming = false;
   state.finished = false;
   state.curSection = -1;
+  state.lastCount = null;
+  state.haptics.stop();
+  state.haptics.setStrength(settings.rumble / 100);
   showScreen('screen-game');
   $('overlay-pause').hidden = true;
   state.lastFrameT = performance.now();
@@ -560,9 +597,9 @@ function onScoringEvent(type, data) {
       hud.setMult(s.multiplier, s.multProgress, s.boostActive, s.noMistakes);
       hud.setAcc(s.accuracy());
       hud.setStars(s.stars);
-      state.engine.onNoteHit(data.note, data.judgment);
+      state.engine.onNoteHit(data.note, data.judgment, data.deltaMs);
       state.mixer.onHit();
-      state.input.rumble(data.note.boost ? 'gold' : data.judgment);
+      state.haptics.hit(data.note, data.judgment);
       if (s.combo > 0 && s.combo % 50 === 0) {
         state.engine.onComboMilestone();
         state.input.rumble('milestone');
@@ -573,7 +610,7 @@ function onScoringEvent(type, data) {
     case 'rollTick':
       hud.setScore(s.score);
       state.engine.onRollTick(data.note);
-      state.input.rumble('good');
+      state.haptics.play('rollTick');
       break;
     case 'miss':
       hud.setCombo(0);
@@ -582,11 +619,13 @@ function onScoringEvent(type, data) {
       hud.setAcc(s.accuracy());
       state.engine.onNoteMiss(data.note);
       state.mixer.onMiss();
+      state.haptics.play('miss');
       break;
     case 'wrongHit':
       hud.setCombo(0);
       hud.setMult(s.multiplier, s.multProgress, s.boostActive, s.noMistakes);
       state.engine.onWrongHit(data.lane);
+      state.haptics.play('wrong');
       break;
     case 'score':
       hud.setScore(s.score);
@@ -597,6 +636,7 @@ function onScoringEvent(type, data) {
       break;
     case 'multiplierUp':
       state.engine.onComboMilestone();
+      state.haptics.play('multUp');
       break;
     case 'meter':
       hud.setMeter(data.meter);
@@ -604,7 +644,8 @@ function onScoringEvent(type, data) {
       break;
     case 'fail':
       toast(t('toast.failed'), 'warn');
-      state.input.rumble('boost');
+      state.haptics.stop();
+      state.haptics.play('fail');
       finishGame(true);
       break;
     case 'boostCharge':
@@ -618,11 +659,13 @@ function onScoringEvent(type, data) {
       hud.setMult(s.multiplier, s.multProgress, true);
       hud.boostFlash();
       state.engine.onBoost(true);
-      state.input.rumble('boost');
+      state.haptics.play('boostStart');
+      // boost boyunca vurusa kilitli "kalp atisi"
+      state.haptics.setBoost(() => state.engine.beatPeriodPhase(songTime()));
       break;
     case 'boostExtend':
       hud.boostFlash();
-      state.input.rumble('milestone');
+      state.haptics.play('boostExtend');
       break;
     case 'boostGroupBroken':
       state.engine.revertBoostNotes(data.reverted);
@@ -631,11 +674,13 @@ function onScoringEvent(type, data) {
       toast(t('toast.boostFull', { key: 'R2 / ' + t('kbd.space') }), 'ok');
       break;
     case 'boostEnd':
+      state.haptics.setBoost(null);
       hud.setBoost(s.bars, s.groupProgress, false, 0);
       hud.setMult(s.multiplier, s.multProgress, false);
       break;
     case 'holdDone':
       state.engine.onHoldDone(data.note, data.completed);
+      if (data.completed) state.haptics.play('holdDone');
       break;
   }
 }
@@ -680,7 +725,14 @@ function loop() {
 
   // geri sayim: ses kaynaginin baslamasina kalan gercek sure
   const pre = state.startCtxTime - state.audioCtx.currentTime;
-  state.hud.countdown(pre > 0 ? Math.ceil(pre) : 0);
+  const cd = pre > 0 ? Math.ceil(pre) : 0;
+  state.hud.countdown(cd);
+  if (cd !== state.lastCount) {
+    if (state.lastCount != null) state.haptics.play(cd > 0 ? 'count' : 'go');
+    state.lastCount = cd;
+  }
+  // uzun nota basili: hafif surekli ugultu
+  state.haptics.setHolds(state.scoring.activeHolds.size);
 
   // bolum degisimi: bant + sahne yogunlugu
   const si = sectionAt(Math.max(0, st));
@@ -708,6 +760,7 @@ function loop() {
 function pauseGame() {
   if (state.paused) return;
   state.paused = true;
+  state.haptics.stop();
   state.audioCtx.suspend();
   $('overlay-pause').hidden = false;
 }
@@ -725,6 +778,7 @@ function finishGame(failed) {
   state.playing = false;
   state.finished = true;
   state.input.setEnabled(false);
+  if (!failed) state.haptics.stop();
   stopAudio();
   cancelAnimationFrame(state.raf);
 
@@ -795,6 +849,7 @@ function quitToMenu() {
   state.playing = false;
   state.paused = false;
   state.practice = null;
+  if (state.haptics) state.haptics.stop();
   if (state.input) state.input.setEnabled(false);
   stopAudio();
   cancelAnimationFrame(state.raf);
@@ -990,6 +1045,9 @@ function init() {
     onStatus: setPadStatus,
     onDevice: (d) => { if (state.playing) updateGameControls(d); }
   });
+  state.haptics = new Haptics((s, w) => state.input.setMotors(s, w));
+  state.haptics.setStrength(settings.rumble / 100);
+  state.input.haptics = state.haptics;
   state.hid.onDisconnect = () => { state.input.setHid(null); setPadStatus(state.input.isConnected(), state.input.padName); };
   state.hid.tryReconnect().then(ok => {
     if (ok) { state.input.setHid(state.hid); setPadStatus(true); }
@@ -1042,7 +1100,7 @@ function init() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && state.playing && !state.paused) pauseGame();
   });
-  window.addEventListener('resize', () => { if (state.playing) layoutLaneKeys(); });
+  window.addEventListener('resize', () => { if (state.playing) { layoutLaneKeys(); layoutSideHud(); } });
 
   // otomasyon/test kancasi
   window.__game = { state, startGame, buildChart, songTime, handleFile, settings };

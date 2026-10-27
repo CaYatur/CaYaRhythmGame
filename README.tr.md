@@ -55,6 +55,8 @@ Herhangi bir ses dosyasını vokal, lead, bas, davul ya da tam grup için çalı
 - **3D sahne.** Işık şeritli truss kemerleri, dönen spot ışıkları, canlı spektrumlu **LED duvar**, pompalayan hoparlör kuleleri ve vuruşa göre zıplayıp sahne metrene tepki veren seyirci.
 - **Nota otoyolu.** Pahlı mücevher notalar, akan otoyol, vuruş ve ölçü çizgileri, bloom ve parçacıklar. Işıklar bölüm yoğunluğunu ve şarkının enerji eğrisini izler.
 - **Klavye ve kol.** **WebHID** üzerinden tam DualSense desteği (Bluetooth dahil güvenilir titreşim), Gamepad-API yedeğiyle.
+- **Katmanlı titreşim.** İsabette net tıklar; vurgu, bırak ve rulo için ayrı desenler; uzun nota basılıyken hafif uğultu; Boost boyunca vuruşa kilitli kalp atışı; ayarlanabilir güç.
+- **Açık görüş.** İsabet ve kombo yazıları otoyolun üstünde değil yanında durur. Erken basışta nota alanı üst kenarından, geç basışta alt kenarından parlar.
 - **İki dilli arayüz.** İngilizce ve Türkçe; otomatik algılanır, anında değiştirilebilir.
 
 ## 🖼️ Önizleme
@@ -117,6 +119,16 @@ npm start                   # http://localhost:3000 adresinde açılır
 | Vokal F1, sentetik | 0.53 | **0.84** |
 | Synth lead / pad'de yanlış "vokal" | 23.8 / dk | **2.9 / dk** |
 | Kick / trampet vuruş F1 | %61 / %28 | **%71 / %41** |
+
+**Gerçek vokallerde** (8 zor şarkı: pop, rap, R&B, vokalli EDM), Demucs ile ayrılmış referans vokallere karşı `tools/realvocal-bench.mjs` ile:
+
+| Ölçüt | Önce | Şimdi |
+| --- | --- | --- |
+| Ham perde doğruluğu (±1 yarım ton) | %35.1 | **%40.9** |
+| Genel doğruluk (perde + sessizlik) | %52.5 | **%56.5** |
+| Vokal yakalama / yanlış alarm | %58.7 / %28.7 | **%61.3 / %26.6** |
+
+Demucs yalnızca geliştirme sırasında ölçüm aracı olarak kullanılır (`tools/make-vocal-refs.py`); oyunun kendisi ML'siz kalır ve tamamen tarayıcıda çalışır.
 
 ## 🏆 Puanlama
 

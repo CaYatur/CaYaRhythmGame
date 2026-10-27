@@ -55,6 +55,8 @@ A browser rhythm game that turns any audio file into playable note charts for vo
 - **3D stage.** Truss arches with light strips, sweeping spotlights, a live-spectrum **LED wall**, pumping speaker stacks, and a crowd that bounces to the beat and reacts to your stage meter.
 - **Note highway.** Beveled gem notes, a scrolling highway, beat and measure lines, bloom and particles. Lighting follows section intensity and the song's energy curve.
 - **Keyboard & controller.** Full DualSense support over **WebHID** (reliable rumble, including Bluetooth), with a Gamepad-API fallback.
+- **Layered haptics.** Crisp taps on hits, distinct patterns for accents, lifts and rolls, a low hum while you hold a sustain, a beat-locked heartbeat during Boost, and an adjustable strength.
+- **Clear view.** Judgments and combo sit beside the highway, not on it. The receptors glow from the top edge when you're early and from the bottom edge when you're late.
 - **Bilingual UI.** English and Turkish, auto-detected and switchable on the fly.
 
 ## 🖼️ Preview
@@ -115,6 +117,16 @@ npm start                   # serves on http://localhost:3000
 | Vocal F1, synthetic | 0.53 | **0.84** |
 | False "vocals" on synth leads / pads | 23.8 / min | **2.9 / min** |
 | Kick / snare onset F1 | 61% / 28% | **71% / 41%** |
+
+On **real vocals** (8 hard songs: pop, rap, R&B, vocal EDM), scored against Demucs-separated reference vocals with `tools/realvocal-bench.mjs`:
+
+| Metric | Before | Now |
+| --- | --- | --- |
+| Raw pitch accuracy (±1 semitone) | 35.1% | **40.9%** |
+| Overall accuracy (pitch + silence) | 52.5% | **56.5%** |
+| Voicing recall / false alarm | 58.7% / 28.7% | **61.3% / 26.6%** |
+
+Demucs is used **only** as a measuring stick during development (`tools/make-vocal-refs.py`); the game itself stays ML-free and runs entirely in the browser.
 
 ## 🏆 Scoring
 

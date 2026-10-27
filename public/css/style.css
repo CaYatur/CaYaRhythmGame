@@ -404,12 +404,25 @@ kbd {
 }
 
 /* merkez: judgment + kombo */
+/* Yazilar otoyolun ORTASINDA degil: varsayilan (dar ekran) otoyolun ust
+   ucunun da ustunde kucuk bir serit; genis ekranda JS otoyolun sol kenarina
+   hizalanmis bir yan yigina yerlestirir (.side). Notalarin gorusu kapanmaz. */
 #hud-center {
-  position: absolute; left: 50%; top: 30%;
-  transform: translateX(-50%);
+  position: absolute; left: 50%; top: 9%;
+  transform: translateX(-50%) scale(0.62);
+  transform-origin: top center;
   text-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: 0.7rem;
+  display: flex; flex-direction: column; align-items: center; gap: 0.35rem;
+  opacity: 0.9;
 }
+#hud-center.side {
+  transform: translateX(-100%);
+  transform-origin: top right;
+  align-items: flex-end; text-align: right;
+  opacity: 1;
+}
+#hud-center.side .judgment { font-size: 1.55rem; min-height: 2rem; }
+#hud-center.side #hud-combo { font-size: 2.6rem; }
 .judgment {
   font-size: 2rem; font-weight: 900; letter-spacing: 0.12em;
   opacity: 0; min-height: 2.6rem;
@@ -442,9 +455,9 @@ kbd {
 .combo-label { font-size: 0.7rem; letter-spacing: 0.3em; color: var(--muted); }
 
 #hud-countdown {
-  position: absolute; left: 50%; top: 40%;
+  position: absolute; left: 50%; top: 17%;
   transform: translate(-50%, -50%);
-  font-size: 7rem; font-weight: 900;
+  font-size: 4.6rem; font-weight: 900;
   color: var(--text);
   text-shadow: 0 0 40px var(--accent);
   opacity: 0;
@@ -707,8 +720,7 @@ kbd {
 .nl-chip b { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); font-weight: 600; }
 .nl-chip svg { width: 18px; height: 14px; flex: 0 0 auto; }
 .hud-milestone {
-  position: absolute; left: 50%; top: 20%; transform: translateX(-50%);
-  font-size: 2.6rem; font-weight: 900; letter-spacing: 0.12em; white-space: nowrap;
+  font-size: 1.5rem; font-weight: 900; letter-spacing: 0.12em; white-space: nowrap; min-height: 1.6rem;
   background: linear-gradient(90deg, var(--accent2), #fff, var(--pink));
   -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 0 18px rgba(124, 77, 255, 0.8));
@@ -716,11 +728,11 @@ kbd {
 }
 .hud-milestone.show { animation: milestoneIn 1.3s ease-out; }
 @keyframes milestoneIn {
-  0% { opacity: 0; transform: translateX(-50%) scale(0.6); }
-  15% { opacity: 1; transform: translateX(-50%) scale(1.12); }
-  30% { transform: translateX(-50%) scale(1); }
+  0% { opacity: 0; transform: scale(0.6); }
+  15% { opacity: 1; transform: scale(1.12); }
+  30% { transform: scale(1); }
   75% { opacity: 1; }
-  100% { opacity: 0; transform: translateX(-50%) translateY(-14px); }
+  100% { opacity: 0; transform: translateY(-10px); }
 }
 
 @media (max-width: 640px) {

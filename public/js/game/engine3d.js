@@ -109,6 +109,20 @@ function stripeTexture() {
   return t;
 }
 
+// zamanlama isigi dokusu: bir kenarda parlak, karsi kenara dogru solar.
+// Duzlem yatirilinca dokunun ust kenari otoyolda ILERI (ekranda yukari) bakar.
+function edgeGlowTexture() {
+  const c = document.createElement('canvas');
+  c.width = 4; c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 64);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.45, 'rgba(255,255,255,0.35)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 4, 64);
+  return new THREE.CanvasTexture(c);
+}
+
 // spot isik konisi icin dikey solma dokusu
 function beamTexture() {
   const c = document.createElement('canvas');
@@ -278,10 +292,18 @@ export class Engine {
       const fill = new THREE.Mesh(recFillGeo, fillMat);
       fill.rotation.x = -Math.PI / 2;
       fill.position.y = 0.062;
-      group.add(frame); group.add(inner); group.add(fill);
+      // zamanlama isigi: erken -> ust (uzak) kenardan, gec -> alt (yakin) kenardan
+      const timingMat = new THREE.MeshBasicMaterial({
+        map: this._edgeTex || (this._edgeTex = edgeGlowTexture()), color: 0xffffff,
+        transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const timing = new THREE.Mesh(this._timingGeo || (this._timingGeo = new THREE.PlaneGeometry(LANE_W * 0.86, 0.95)), timingMat);
+      timing.rotation.x = -Math.PI / 2;
+      timing.position.y = 0.075;
+      group.add(frame); group.add(inner); group.add(fill); group.add(timing);
       group.position.set(x, 0.05, RECEPTOR_Z);
       scene.add(group);
-      this.receptors.push({ group, frameMat, innerMat, fillMat, pressed: false, glowT: 0 });
+      this.receptors.push({ group, frameMat, innerMat, fillMat, timing, timingMat, timingT: 0, timingPeak: 0, pressed: false, glowT: 0 });
     }
 
     // vurus cizgisi seridi
@@ -525,8 +547,24 @@ export class Engine {
   }
 
   // ---- oyun olaylari (main.js cagirir) ----
-  onNoteHit(note, judgment) {
+  // Erken/gec gorsel geri bildirimi (ms; - = erken). 22 ms alti tam isabet sayilir.
+  // Erken: isik receptorun UST (uzak) kenarindan suzulur (camgobegi);
+  // gec: ALT (yakin) kenarindan suzulur (pembe). Yogunluk sapmayla artar.
+  showTiming(lane, deltaMs) {
+    const r = this.receptors[lane];
+    if (!r || deltaMs == null || Math.abs(deltaMs) < 22) return;
+    const early = deltaMs < 0;
+    r.timingMat.color.setHex(early ? 0x35c4f0 : 0xf0509b);
+    // varsayilan: dokunun parlak ucu -Z'de (uzak kenar). Gec icin 180 derece cevir.
+    r.timing.rotation.z = early ? 0 : Math.PI;
+    r.timing.position.z = early ? -0.2 : 0.2;
+    r.timingPeak = 0.45 + 0.55 * Math.min(1, (Math.abs(deltaMs) - 22) / 90);
+    r.timingT = 1;
+  }
+
+  onNoteHit(note, judgment, deltaMs) {
     const lane = note.lane;
+    this.showTiming(lane, deltaMs);
     const color = note.boost ? 0xffffff : LANE_COLORS[lane];
     const x = this._laneX(lane);
     // geri bildirim yalniz vurulan seritte ve olculu: kucuk parcacik + receptor parlamasi
@@ -725,6 +763,8 @@ export class Engine {
       r.fillMat.opacity += ((press * 0.16 + r.glowT * 0.14) - r.fillMat.opacity) * Math.min(1, dt * 12);
       const s = 1 + press * 0.06 + r.glowT * 0.05;
       r.group.scale.setScalar(s);
+      r.timingT = Math.max(0, r.timingT - dt * 2.6);
+      r.timingMat.opacity = r.timingPeak * r.timingT * r.timingT;
     }
 
     // hold sirasinda receptorde kivilcim
