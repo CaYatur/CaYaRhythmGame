@@ -267,6 +267,13 @@ function renderSongInfo() {
   $('si-name').textContent = state.songName;
   $('song-art').setAttribute('style', artStyle(state.songName));
   $('si-meta').textContent = t('song.meta2', { min, sec: String(sec).padStart(2, '0'), bpm: state.analysis.bpm, secs: secs.length });
+  if (state.analysis.sepMode === 'ai') {
+    const chip = document.createElement('span');
+    chip.className = 'ai-chip';
+    chip.textContent = t('song.ai');
+    chip.title = t('song.ai.desc');
+    $('si-meta').append(' ', chip);
+  }
   const strip = $('sec-strip');
   if (!secs.length) { strip.innerHTML = `<span class="sec-none">${t('stage.structure.none')}</span>`; return; }
   strip.innerHTML = secs.map(s => {

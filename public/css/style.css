@@ -172,6 +172,7 @@ button { font-family: inherit; }
 .song-text { min-width: 0; }
 .si-name { font-size: 1.35rem; font-weight: 800; line-height: 1.2; word-break: break-word; }
 .si-meta { font-family: var(--mono); font-size: 0.74rem; color: var(--muted); margin-top: 0.4rem; letter-spacing: 0.03em; }
+.ai-chip { display: inline-block; margin-left: 0.25rem; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.66rem; letter-spacing: 0.06em; color: #0d0a1a; background: linear-gradient(90deg, #3fe0ff, #b57cff); vertical-align: 1px; }
 .sec-strip-wrap { margin-top: 0.4rem; }
 .sec-strip { display: flex; gap: 2px; height: 30px; border-radius: 8px; overflow: hidden; }
 .sec-block {

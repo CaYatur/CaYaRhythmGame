@@ -12,6 +12,8 @@
 //
 // Kullanim: node tools/realvocal-bench.mjs <refs_klasoru> <ses_klasoru> [<ses_klasoru> ...]
 //   (referans adi = ses dosyasinin uzantisiz adi). BENCH_TUNE='{...}' ile ablasyon.
+//   STEMS=<klasor>: oyundaki yapay zeka ayirmasi gibi kanallar da verilir
+//   (<klasor>/<ad>.<vocals|drums|bass|other>.f32, 22050 Hz mono float32).
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -77,7 +79,17 @@ for (const f of readdirSync(refDir).filter(f => f.endsWith('.json')).sort()) {
   const audio = findAudio(ref.name);
   if (!audio) { console.log('ses bulunamadi:', ref.name); continue; }
   const { L, R } = decode(audio, ref.start, ref.dur);
-  self.onmessage({ data: { cmd: 'analyze', left: L, right: R, sampleRate: SR, debug: true, tune: TUNE } });
+  let stems = null;
+  if (process.env.STEMS) {
+    stems = {};
+    for (const k of ['vocals', 'drums', 'bass', 'other']) {
+      const p = path.join(process.env.STEMS, ref.name + '.' + k + '.f32');
+      if (!existsSync(p)) { stems = null; break; }
+      const b = readFileSync(p);
+      stems[k] = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
+    }
+  }
+  self.onmessage({ data: { cmd: 'analyze', left: L, right: R, sampleRate: SR, debug: true, tune: TUNE, stems } });
   const a = result;
   if (!ref.midi && ref.vocal) ref.midi = ref.vocal.midi; // make-stem-refs.py bicimi
   const hop = ref.hop, N = ref.midi.length;

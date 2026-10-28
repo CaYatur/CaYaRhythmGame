@@ -6,7 +6,7 @@
 
 **Bir şarkı bırak. Otomatik analiz edilsin. Neon 3D sahnede çal.**
 
-Herhangi bir ses dosyasını vokal, lead, bas, davul ya da tam grup için çalınabilir nota haritalarına dönüştüren tarayıcı tabanlı ritim oyunu. Elle haritalama yok, indirme yok. Saf JavaScript ve Three.js ile yazıldı.
+Herhangi bir ses dosyasını vokal, lead, bas, davul ya da tam grup için çalınabilir nota haritalarına dönüştüren tarayıcı tabanlı ritim oyunu. Elle haritalama yok. Bir yapay zekâ modeli şarkıyı doğrudan tarayıcında vokal, davul, bas ve enstrümana ayırır ve her parça kendi haritasını alır. Saf JavaScript ve Three.js ile yazıldı.
 
 ### ▶ [Hemen GitHub Pages'te oyna](https://cayatur.github.io/CaYaRhythmGame/)
 
@@ -45,7 +45,11 @@ Herhangi bir ses dosyasını vokal, lead, bas, davul ya da tam grup için çalı
 - **Şarkı kütüphanesi.** Analiz edilen şarkılar tarayıcında (IndexedDB) saklanır ve yeniden analiz gerekmeden anında açılır.
 - **Solak düzen**, ayarlanabilir nota hızı ve ses.
 
-### Ses analizi (tamamı tarayıcıda, ML'siz)
+### Ses analizi (tamamı tarayıcıda)
+- **Yapay zekâ ile kanal ayırma.** WebGPU varsa **HTDemucs** (Meta AI) şarkıyı analizden önce vokal, davul, bas ve enstrümana ayırır; her parça kendi temiz kanalından okunur.
+  - **Vokal notaları:** vokal kanalına özel bir izleyiciden gelir. FFT tabanlı YIN perdesi, hece başları ve grubun altında kaybolan vokali eleyen bir kapı kullanır.
+  - **Model:** yaklaşık 126 MB, bir kez indirilir ve önbellekte tutulur. Ses dosyan tarayıcıdan hiç çıkmaz.
+  - **Yedek:** WebGPU yoksa ya da ayar kapalıysa aşağıdaki klasik analiz çalışır.
 - **Stereo merkez çıkarımı** (kanal-arası benzerlik) ve vokali yalıtmak için **REPET** ile eşlik ayrıştırma.
 - **Yarım-ton altı perde takibi** (harmonik belirginlik, oktav düzeltmesi ve Viterbi).
 - **İnsan sesi kapısı.** **Formant** izi, **mikro perde** hareketi (vibrato/jitter) ve **harmoniklik**, yalnızca vokale benzeyen synth lead ve pad'leri eler.
@@ -107,9 +111,13 @@ npm start                   # http://localhost:3000 adresinde açılır
 ## 🧠 Nasıl çalışır
 
 1. **Çöz ve yeniden örnekle:** 22.05 kHz stereo; ham sol/sağ kanallar bir Web Worker'a gider.
-2. **Analiz et:** iki kanalda STFT, ardından merkez maskesi, HPSS, REPET, perde belirginliği ve Viterbi, ses özellikleri, davul ve bas vuruşları, vuruş takibi ve şarkı yapısı.
-3. **Harita üret:** olaylar vuruş ızgarasına hizalanır ve parçaya ve zorluğa göre şeritlere dağıtılır. Her nota bölümüyle etiketlenir.
-4. **Oyna:** sahneyi Three.js çizer; parça geri bildirimini ve pratik hızını Web Audio mikseri yönetir; isabet, çarpan, boost, sahne metresi ve yıldızları puanlama motoru hesaplar.
+2. **Ayır (WebGPU):** ikinci bir worker, HTDemucs'u ONNX Runtime Web ile 7.8 sn'lik bölümlerde çalıştırır.
+   - **Model biçimi:** karışık hassasiyetli ve 21 parçaya bölünmüş; sayfa bu sırada donmaz.
+   - **Hız:** dizüstü GPU'da gerçek zamanın yaklaşık 5 katı; 3.5 dakikalık bir şarkı yaklaşık 40 sn sürer.
+   - **Çıktı:** kanallar 22.05 kHz monoya indirgenip analiz worker'ına verilir.
+3. **Analiz et:** iki kanalda STFT, ardından merkez maskesi, HPSS, REPET, perde belirginliği ve Viterbi, ses özellikleri, davul ve bas vuruşları, vuruş takibi ve şarkı yapısı.
+4. **Harita üret:** olaylar vuruş ızgarasına hizalanır ve parçaya ve zorluğa göre şeritlere dağıtılır. Her nota bölümüyle etiketlenir.
+5. **Oyna:** sahneyi Three.js çizer; parça geri bildirimini ve pratik hızını Web Audio mikseri yönetir; isabet, çarpan, boost, sahne metresi ve yıldızları puanlama motoru hesaplar.
 
 ### Tahmin değil, ölçüm
 
@@ -147,7 +155,26 @@ npm start                   # http://localhost:3000 adresinde açılır
 
 </details>
 
-Demucs yalnızca geliştirme sırasında ölçüm aracı olarak kullanılır; oyunun kendisi ML'siz kalır ve tamamen tarayıcıda çalışır.
+**Yapay zekâ ayırması, adil ölçümle.** Ayırma modelinin çıktısı kendi cevap anahtarı olamaz. Bu yüzden bu değerler, referans olarak **MUSDB18 test kesitlerini** kullanır: modelin hiç eğitilmediği 50 şarkı ve kayıttaki gerçek kanallar. Vokal kare ölçütleri, gerçek vokal kanalında oyunun kullanmadığı bir algoritmayla (**pYIN**) ölçülür.
+
+| Ölçüt (MUSDB18 test) | Klasik analiz | Yapay zekâ ayırmasıyla |
+| --- | --- | --- |
+| Kick vuruş F1 | %46 | **%75** |
+| Trampet + zil vuruş F1 | %70 | **%84** |
+| Bas vuruş F1 / perde sınıfı | %49 / %68 | **%67 / %76** |
+| Enstrüman (Lead) vuruş F1 | %63 | **%75** |
+| Vokal perde doğruluğu (±1 yarım ton) | %36 | **%70** |
+| Bulunan vokal heceleri | %29 | **%56** |
+| Usta haritalarda gerçek olaya denk gelen nota (davul / bas / lead / vokal) | %82 / %63 / %77 / %85 | **%95 / %84 / %80 / %91** |
+
+**18 gerçek şarkıda** (pop, rap, R&B, EDM, phonk, rock; referanslar Demucs kanallarından, vokal pYIN ile):
+- **Vokal perde doğruluğu:** %48'den **%73**'e çıkar.
+- **Bulunan heceler:** %34'ten **%62**'ye çıkar.
+- **Gerçek heceye düşen Usta vokal notaları:** %78'den **%89**'a çıkar.
+
+Şarkı söylenmeyen şarkılar artık synth'lerden oluşan bir vokal haritası almıyor. 31 tam şarkıda, eskiden Orta zorlukta 159–599 "vokal" notası alan enstrümantal parçalar artık 2–58 nota alıyor.
+
+Bundan önceki tablolar klasik analizi ölçer; WebGPU yokken çalışan budur.
 
 ## 🏆 Puanlama
 
@@ -166,7 +193,7 @@ public/
   js/
     main.js             akış: kütüphane → sahne → oyun / pratik → sonuç
     i18n.js             TR/EN metinleri
-    audio/              analiz worker'ı, köprü, oyun mikseri (parça geri bildirimi)
+    audio/              yapay zekâ ayırma worker'ı, analiz worker'ı, köprü, oyun mikseri (parça geri bildirimi)
     game/               harita, puanlama, girdi, DualSense HID, 3D motor, HUD, kütüphane
 tools/                  benchmark, sentetik test sinyalleri, test şarkısı, Pages paketleyici
 .github/workflows/      GitHub Pages yayını
@@ -175,6 +202,11 @@ tools/                  benchmark, sentetik test sinyalleri, test şarkısı, Pa
 ## 📄 Lisans
 
 [MIT](LICENSE) © 2026 [CaYaDev](https://cayadev.com)
+
+**Üçüncü taraf (çalışma anında yüklenir, pakete dahil değildir):**
+- [HTDemucs](https://github.com/facebookresearch/demucs): Alexandre Défossez ve ark., Meta AI (MIT).
+- Tarayıcı ONNX dışa aktarımı [monteslu/htdemucs-web-onnx](https://huggingface.co/monteslu/htdemucs-web-onnx) (MIT): Hugging Face'ten sabit bir revizyonla alınır.
+- [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) (MIT): jsDelivr'dan yüklenir.
 
 ---
 

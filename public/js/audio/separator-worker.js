@@ -187,6 +187,7 @@ async function loadOrt() {
   if (ort) return;
   ort = await import(ORT_BASE + 'ort.webgpu.min.mjs');
   ort.env.wasm.wasmPaths = ORT_BASE;
+  ort.env.logLevel = 'error'; // dugum-yerlesimi uyarilari kullanici konsolunu doldurmasin
   // GitHub Pages COOP/COEP gondermez -> SharedArrayBuffer yok -> tek is parcacigi
   ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
 }

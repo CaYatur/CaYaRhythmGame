@@ -6,7 +6,7 @@
 
 **Drop any song. It gets analyzed automatically. Play it on a neon 3D stage.**
 
-A browser rhythm game that turns any audio file into playable note charts for vocals, lead, bass, drums or the full band. No manual mapping, no downloads. Built with vanilla JavaScript and Three.js.
+A browser rhythm game that turns any audio file into playable note charts for vocals, lead, bass, drums or the full band. No manual mapping: an AI model splits the song into vocals, drums, bass and instruments right in your browser, and each part gets its own chart. Built with vanilla JavaScript and Three.js.
 
 ### ▶ [Play it now on GitHub Pages](https://cayatur.github.io/CaYaRhythmGame/)
 
@@ -45,7 +45,8 @@ A browser rhythm game that turns any audio file into playable note charts for vo
 - **Song library.** Analyzed songs are stored in your browser (IndexedDB) and reopen instantly, with no re-analysis.
 - **Lefty flip**, adjustable note speed and volume.
 
-### Audio analysis (all in-browser, ML-free)
+### Audio analysis (all in-browser)
+- **AI stem separation.** With WebGPU, **HTDemucs** (Meta AI) splits the song into vocals, drums, bass and instruments before analysis, and every part is read from its own clean stem. Vocal notes come from a dedicated tracker on the vocal stem: FFT-based YIN pitch, syllable onsets, and a gate that drops vocals buried under the band. The model (~126 MB) downloads once and is cached; your audio never leaves the browser. Without WebGPU, or with the setting off, the classic analysis below runs instead.
 - **Stereo center extraction** from inter-channel similarity, plus **REPET** background removal to isolate the vocal.
 - **Sub-semitone pitch tracking** (harmonic salience, octave correction and Viterbi).
 - **Human-voice gate.** A **formant** trace, **micro-pitch** motion (vibrato/jitter) and **harmonicity** reject synth leads and pads that only resemble vocals.
@@ -96,7 +97,7 @@ npm start                   # serves on http://localhost:3000
 
 | Script | What it does |
 | --- | --- |
-| `npm test` | Scoring and note-type tests + a quick analysis benchmark |
+| `npm test` | Scoring and note-type tests + a quick analysis benchmark (mix and perfect-stem scenarios) |
 | `npm run bench` | Full analysis benchmark (adds real songs from `public/testsongs/*.mp3` if present; needs `ffmpeg`) |
 | `npm run build:pages` | Builds the static site into `_site/` (the same bundle that GitHub Pages serves) |
 
@@ -105,9 +106,10 @@ npm start                   # serves on http://localhost:3000
 ## 🧠 How it works
 
 1. **Decode & resample** to 22.05 kHz stereo; the raw left/right channels go to a Web Worker.
-2. **Analyze.** STFT on both channels, then a center mask, HPSS, REPET, pitch salience with Viterbi, voice features, drum and bass onsets, beat tracking and song structure.
-3. **Build charts.** Events are snapped to the beat grid and spread across lanes per part and difficulty. Notes are tagged with their section.
-4. **Play.** Three.js renders the stage, a Web Audio mixer handles part feedback and practice speed, and the scoring engine handles judgments, multiplier, boost, the stage meter and stars.
+2. **Separate (WebGPU).** A second worker runs HTDemucs with ONNX Runtime Web on 7.8 s segments. The model is a mixed-precision split into 21 pieces, so the page stays responsive. It runs at about 5× real time on a laptop GPU, so a 3½-minute song takes about 40 s. The stems are downmixed to 22.05 kHz mono and handed to the analysis worker.
+3. **Analyze.** STFT on both channels, then a center mask, HPSS, REPET, pitch salience with Viterbi, voice features, drum and bass onsets, beat tracking and song structure.
+4. **Build charts.** Events are snapped to the beat grid and spread across lanes per part and difficulty. Notes are tagged with their section.
+5. **Play.** Three.js renders the stage, a Web Audio mixer handles part feedback and practice speed, and the scoring engine handles judgments, multiplier, boost, the stage meter and stars.
 
 ### Measured, not guessed
 
@@ -134,7 +136,21 @@ npm start                   # serves on http://localhost:3000
 
 On **vocals**, scored with MIREX metrics against the Demucs vocal stem (`tools/realvocal-bench.mjs`): raw pitch accuracy is **54% / 52%** and overall accuracy is **67% / 63%**. Voicing recall is **69% / 68%**, with **18% / 28%** false alarms. (Earlier versions of this table reported lower numbers. The reference tool assumed a 10 ms hop when the real hop was 9.977 ms, which shifted the references by up to 0.2 s over 90 s. It is fixed, and every number above uses the corrected references.)
 
-Demucs is used **only** as a measuring stick during development; the game itself stays ML-free and runs entirely in the browser.
+**AI stem separation, scored fairly.** The separation model's output can't be its own answer key, so these numbers use the **MUSDB18 test excerpts** (50 songs the model never trained on, with the real recorded stems) for references. Vocal frame metrics use **pYIN** on the true vocal stem, an algorithm the game does not use.
+
+| Metric (MUSDB18 test) | Classic analysis | With AI separation |
+| --- | --- | --- |
+| Kick onset F1 | 46% | **75%** |
+| Snare + cymbal onset F1 | 70% | **84%** |
+| Bass onset F1 / pitch class | 49% / 68% | **67% / 76%** |
+| Instrument (Lead) onset F1 | 63% | **75%** |
+| Vocal pitch accuracy (±1 semitone) | 36% | **70%** |
+| Vocal syllables found | 29% | **56%** |
+| Master charts, notes on a real event (drums / bass / lead / vocals) | 82% / 63% / 77% / 85% | **95% / 84% / 80% / 91%** |
+
+On **18 real songs** (pop, rap, R&B, EDM, phonk, rock; references from Demucs stems, vocals with pYIN): vocal pitch accuracy goes from **48% to 73%**, syllables found from **34% to 62%**, and Master vocal notes landing on a real syllable from **78% to 89%**. Songs without singing no longer get a vocal chart made of synths: across 31 full songs, instrumental tracks that used to get 159–599 "vocal" notes on Medium now get 2–58.
+
+The tables above this one measure the classic analysis. It is what runs without WebGPU.
 
 ## 🏆 Scoring
 
@@ -153,7 +169,7 @@ public/
   js/
     main.js             app flow: library → stage → game / practice → results
     i18n.js             EN/TR strings
-    audio/              analysis worker, bridge, game mixer (part feedback)
+    audio/              AI separation worker, analysis worker, bridge, game mixer (part feedback)
     game/               charts, scoring, input, DualSense HID, 3D engine, HUD, library
 tools/                  benchmark, synthetic test signals, test song, Pages builder
 .github/workflows/      GitHub Pages deployment
@@ -162,6 +178,11 @@ tools/                  benchmark, synthetic test signals, test song, Pages buil
 ## 📄 License
 
 [MIT](LICENSE) © 2026 [CaYaDev](https://cayadev.com)
+
+**Third-party (loaded at runtime, not bundled):**
+- [HTDemucs](https://github.com/facebookresearch/demucs) by Alexandre Défossez et al., Meta AI (MIT).
+- The browser ONNX export, [monteslu/htdemucs-web-onnx](https://huggingface.co/monteslu/htdemucs-web-onnx) (MIT), is fetched from Hugging Face at a pinned revision.
+- [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) (MIT) is loaded from jsDelivr.
 
 ---
 
