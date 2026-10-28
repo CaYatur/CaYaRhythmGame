@@ -2,6 +2,8 @@
 import { readFileSync } from 'node:fs';
 const load = async (p, patch = (s) => s) => import('data:text/javascript,' + encodeURIComponent(patch(readFileSync(new URL(p, import.meta.url), 'utf8'))));
 globalThis.window = globalThis.window || { addEventListener() {} };
+// Node 20'de global navigator yok (CI); Node 21+'da var ama getGamepads/hid yok
+if (typeof navigator === 'undefined') globalThis.navigator = {};
 const { Input } = await load('../public/js/game/input.js', (s) => s.replace(/import \{ t \} from '\.\.\/i18n\.js';/, 'const t = (k) => k;'));
 const { DualSenseHID } = await load('../public/js/game/dualsense-hid.js');
 
