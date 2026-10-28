@@ -402,6 +402,8 @@ export class Engine {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
     if (!this.camera) return [];
+    // ilk kareden once lookAt matrisi henuz islenmemis olur: projeksiyon yanlis cikar
+    this.camera.updateMatrixWorld();
     const v = new THREE.Vector3();
     const out = [];
     for (let i = 0; i < this.laneCount; i++) {

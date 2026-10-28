@@ -423,6 +423,8 @@ kbd {
   opacity: 1;
 }
 #hud-center.side .judgment { font-size: 1.55rem; min-height: 2rem; }
+/* yan yiginda buyume animasyonlari sag kenara sabit: yazi otoyola tasmaz */
+#hud-center.side .judgment, #hud-center.side #hud-combo, #hud-center.side .hud-milestone { transform-origin: right center; }
 #hud-center.side #hud-combo { font-size: 2.6rem; }
 .judgment {
   font-size: 2rem; font-weight: 900; letter-spacing: 0.12em;

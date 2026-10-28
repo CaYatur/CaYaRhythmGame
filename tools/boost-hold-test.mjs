@@ -69,7 +69,7 @@ console.log('E) Boost butonu birakilinca hold biter (gücü aktif olsa bile):');
 {
   const r = rec();
   const sc = new Scoring([note({ id: 0, time: 1, dur: 3, type: 'hold', lane: 0 })], r.fn, 4);
-  sc.bars = 1; sc.activateBoost();              // boostLeft=5, hold end=4
+  sc.bars = 1; sc.activateBoost();              // boostLeft=2.5, hold end=4
   frames(sc, 0.5, 2.0, new Set(), true);        // buton basili -> hold otomatik basladi
   ok(sc.activeHolds.size === 1 && sc.boostActive, 'buton basiliyken hold aktif, boost gücü hala acik');
   frames(sc, 2.0, 2.6, new Set(), false);       // BUTON BIRAKILDI (boost gücü hala aktif)
@@ -84,8 +84,8 @@ console.log('F) Boost gücü bitince tutulmayan hold takilmaz:');
 {
   const r = rec();
   const sc = new Scoring([note({ id: 0, time: 1, dur: 6, type: 'hold', lane: 0 })], r.fn, 4);
-  sc.bars = 1; sc.activateBoost();              // boostLeft=5, hold end=7
-  frames(sc, 0.5, 7.5, new Set(), true);        // buton basili ama güç ~5.5'te biter
+  sc.bars = 1; sc.activateBoost();              // boostLeft=2.5, hold end=7
+  frames(sc, 0.5, 7.5, new Set(), true);        // buton basili ama güç ~3.0'te biter
   const boostEnd = r.ev.find(e => e.t === 'boostEnd');
   ok(!!boostEnd, 'boost gücü bitti (boostEnd)');
   ok(sc.activeHolds.size === 0, 'hold takilmadi (aktif hold kalmadi)');
