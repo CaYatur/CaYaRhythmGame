@@ -1341,7 +1341,7 @@ function salAtPath(sal, path, F) {
 //      perde degisimi, ayni perdede enerji cukurlu yeni hece; unluye
 //      baglanmayan guclu perdesiz hece (rap) ayri nota
 // Olcum (Demucs ile ayrilmis vokal, bagimsiz pYIN referansi, 18 gercek sarki):
-// perde dogrulugu %48 -> %73, hece kapsama %34 -> %62, Usta haritada notalarin
+// perde dogrulugu %48 -> %72, hece kapsama %34 -> %61, Usta haritada notalarin
 // gercek heceye denk gelmesi %78 -> %89.
 const VS_W = 1024, VS_TMAX = 320, VS_N = 2048;
 
@@ -1514,8 +1514,8 @@ function vocalFromStem(x, acc, tune) {
 // ---------- ayrilmis davul / bas / enstruman kanallarindan olaylar ----------
 // Miks yolu (HPSS + bant akisi + kick sonum testi + stereo yan kanal) temiz
 // kanalda gereksizdir; her kanal kendi bandinda dogrudan okunur. MUSDB18 test
-// kesitlerinde (gercek kanallardan referans) F1: kick %46 -> %72, trampet+hat
-// %71 -> %85, bas %51 -> %67 (perde sinifi %67 -> %77), lead %63 -> %76.
+// kesitlerinde (gercek kanallardan referans) F1: kick %46 -> %74, trampet+hat
+// %70 -> %83, bas %49 -> %66 (perde sinifi %68 -> %80), lead %63 -> %74.
 // Zaman kalibrasyonu: pencere ortasi damgasina eklenir. Akis tepesi ani
 // ataklarda pencere ortasindan once olusur; bilinen anlarda vurulan sentetik
 // kanallarla olculdu (tools/ disi gelistirme betigi), miks yolu ONSET_OFFSET ile
