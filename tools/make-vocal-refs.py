@@ -13,7 +13,9 @@ import numpy as np
 
 SR_IN = 44100
 SR = 22050
-HOP = 0.01  # 10 ms
+# ~10 ms izgara: TAM SAYI ornek adimi (220 @ 22050 Hz = 9.977 ms). Zamanlar bu
+# gercek adimla hesaplanir; 0.01 varsaymak 90 sn'de ~0.2 sn kayma yaratiyordu.
+HOP = 220 / SR
 
 
 def decode(path, start, dur):
@@ -112,13 +114,16 @@ def main():
                     v[i - run:i] = 1 - val
                 run = 0
         midi = np.where(v > 0, 69 + 12 * np.log2(np.maximum(f0, 1) / 440.0), 0)
-        snr = 20 * np.log10((rms + 1e-9) / (arms + 1e-9))
+        # YIN penceresinin ortasina hizala (pencere 1024 ornek -> ~2 kare)
+        pad = int(round(512 / SR / HOP))
+        midi = np.concatenate([np.zeros(pad), midi]); snr = None
+        snr = np.concatenate([np.zeros(pad), 20 * np.log10((rms + 1e-9) / (arms + 1e-9))])
         ref = {'name': name, 'start': start, 'dur': dur, 'hop': HOP,
                'midi': [round(float(m), 2) for m in midi],
                'vocSnrDb': [round(float(x), 1) for x in snr]}
         with open(os.path.join(out_dir, name + '.json'), 'w', encoding='utf-8') as f:
             json.dump(ref, f)
-        print(f'{name}: voiced {v.mean() * 100:.1f}% of {len(v)} frames, median vocal/acc {np.median(snr[v > 0]):.1f} dB')
+        print(f'{name}: voiced {v.mean() * 100:.1f}% of {len(v)} frames')
 
 
 if __name__ == '__main__':

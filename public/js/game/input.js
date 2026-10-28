@@ -16,7 +16,10 @@ export const KEY_HINT_5 = 'D F J K L';
 
 export class Input {
   constructor(handlers) {
-    this.h = handlers; // {onLane(lane, down), onBoost, onPause, onToast}
+    this.h = handlers; // {onLane(lane, down, when), onBoost, onPause, onToast}
+    // when: basisin gercek zamani (performance.now() tabani, ms). Kare
+    // bekleyen okuma yerine olay/rapor zamani kullanilir: kare takilsa da
+    // vurus zamanlamasi kaymaz.
     this.laneCount = 4;
     this.heldLanes = new Set();
     this.keyMap = {};
@@ -63,12 +66,20 @@ export class Input {
   setEnabled(v) {
     this.enabled = v;
     if (!v) { this.heldLanes.clear(); this._kbBoost = false; this._padBoost = false; }
+    // Gamepad API olay vermez: oyun sirasinda kareden bagimsiz ~4 ms'de bir oku
+    clearInterval(this._fastPoll);
+    this._fastPoll = v ? setInterval(() => this._pollGamepad(), 4) : 0;
   }
 
   // boost butonu (R2 ya da Bosluk) su an fiziksel basili mi
   get boostHeld() { return this._kbBoost || this._padBoost; }
 
-  setHid(hid) { this.hid = hid; }
+  // HID: her giris raporunda kenarlar HEMEN islenir (rapor zamani ile)
+  setHid(hid) {
+    if (this.hid && this.hid !== hid) this.hid.onButtons = null;
+    this.hid = hid;
+    if (hid) hid.onButtons = (b, when) => this._applyPad(this._hidLanes(b), b.r2, b.options, when);
+  }
 
   // aktif girdi kaynagini guncelle; degisince HUD'a haber ver
   _useDevice(d) {
@@ -86,7 +97,7 @@ export class Input {
       e.preventDefault();
       this._useDevice('keyboard');
       this.heldLanes.add(lane);
-      this.h.onLane(lane, true);
+      this.h.onLane(lane, true, e.timeStamp);
     }
   }
 
@@ -95,7 +106,7 @@ export class Input {
     const lane = this.keyMap[e.code];
     if (lane !== undefined && this.heldLanes.has(lane)) {
       this.heldLanes.delete(lane);
-      this.h.onLane(lane, false);
+      this.h.onLane(lane, false, e.timeStamp);
     }
   }
 
@@ -163,27 +174,30 @@ export class Input {
     return s;
   }
 
-  // her kare ana donguden cagrilir
+  // her kare ana donguden cagrilir. HID bagliysa girisi rapor olaylari isler
+  // (Gamepad API DualSense tam modda guvenilmez olur); degilse Gamepad API.
   poll() {
-    // Kaynak secimi: HID baglıysa girisi DOGRUDAN HID'den oku (Gamepad API
-    // DualSense tam modda guvenilmez olur). Degilse Gamepad API kullan.
-    let lanes, r2On, optOn;
-    this._padBoost = false; // kol yok / rapor gelmediyse R2 basili sayilmasin
-    if (this.hid && this.hid.connected) {
-      const b = this.hid.buttons;
-      if (!b) return; // henuz rapor gelmedi
-      lanes = this._hidLanes(b);
-      r2On = b.r2;
-      optOn = b.options;
-    } else {
-      const gp = this._gamepad();
-      if (!gp) return;
-      lanes = this._gpLanes(gp);
-      const r2 = gp.buttons[GP_BTN.R2];
-      r2On = !!r2 && (r2.pressed || r2.value > 0.45);
-      optOn = !!(gp.buttons[GP_BTN.OPTIONS] && gp.buttons[GP_BTN.OPTIONS].pressed);
-    }
+    if (this.hid && this.hid.connected) return;
+    this._pollGamepad();
+  }
 
+  _pollGamepad() {
+    if (this.hid && this.hid.connected) return;
+    const gp = this._gamepad();
+    if (!gp) { this._padBoost = false; return; }
+    // ayni durum ikinci kez islenmesin (hizli okuyucu + kare okuyucu)
+    if (gp.timestamp && gp.timestamp === this._gpStamp) return;
+    this._gpStamp = gp.timestamp;
+    const r2 = gp.buttons[GP_BTN.R2];
+    const r2On = !!r2 && (r2.pressed || r2.value > 0.45);
+    const optOn = !!(gp.buttons[GP_BTN.OPTIONS] && gp.buttons[GP_BTN.OPTIONS].pressed);
+    // gp.timestamp: tarayicinin kol verisini aldigi an (performance.now tabani)
+    const when = gp.timestamp && gp.timestamp <= performance.now() ? gp.timestamp : performance.now();
+    this._applyPad(this._gpLanes(gp), r2On, optOn, when);
+  }
+
+  // kol durumundan kenar tespiti (kaynaktan bagimsiz)
+  _applyPad(lanes, r2On, optOn, when) {
     if (!this._padHeld) this._padHeld = new Set();
 
     // serit kenar tespiti (kaynaktan bagimsiz)
@@ -195,12 +209,12 @@ export class Input {
           this._useDevice('gamepad');
           this.heldLanes.add(lane);
           this._padHeld.add(lane);
-          this.h.onLane(lane, true);
+          this.h.onLane(lane, true, when);
         }
       } else if (!pressed && padHeld) {
         this.heldLanes.delete(lane);
         this._padHeld.delete(lane);
-        this.h.onLane(lane, false);
+        this.h.onLane(lane, false, when);
       }
     }
 

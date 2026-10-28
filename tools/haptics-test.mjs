@@ -32,15 +32,39 @@ console.log('B) Uzun nota: basili tutulurken surekli hafif ugultu, birakinca bit
   h.stop();
 }
 
-console.log('C) Boost: vurus fazina kilitli kalp atisi');
+console.log('C) Boost: kesintisiz gumbur, vurusta kabarir');
 {
   const r = rec(); const h = new Haptics(r.out); h.setStrength(1);
   let phase = 0; h.setBoost(() => phase);
   await wait(40); const onBeat = r.log[r.log.length - 1][1];
   phase = 0.6; await wait(40); const offBeat = r.log[r.log.length - 1][1];
-  ok(onBeat > 0.2 && offBeat < 0.05, `vurusta ${onBeat.toFixed(2)} > vurus arasi ${offBeat.toFixed(2)}`);
+  ok(onBeat > offBeat + 0.15, `vurusta ${onBeat.toFixed(2)} > vurus arasi ${offBeat.toFixed(2)}`);
+  ok(offBeat >= 0.15, `vurus arasinda da gumbur suruyor (${offBeat.toFixed(2)})`);
+  // bir tam vurus boyunca hicbir karede motorlar durmuyor
+  const t0 = performance.now(); const from = r.log.length;
+  while (performance.now() - t0 < 300) { phase = ((performance.now() - t0) / 300) % 1; await wait(10); }
+  const frames = r.log.slice(from);
+  ok(frames.length > 5 && frames.every(x => x[1] >= 0.15), `boost boyunca ${frames.length} karenin hepsi titresimli`);
   h.stop();
   ok(r.log[r.log.length - 1][1] === 0 && r.log[r.log.length - 1][2] === 0, 'stop() motorlari sifirladi');
+}
+
+console.log('E) Boost suruyor: her nota yatagin USTUNDE ayri hissedilir');
+{
+  const r = rec(); const h = new Haptics(r.out); h.setStrength(1);
+  h.setBoost(() => 0.5); await wait(40);
+  const bedW = r.log[r.log.length - 1][2];
+  const from = r.log.length;
+  h.hit({ type: 'tap' }, 'perfect'); await wait(30);
+  const peakW = Math.max(...r.log.slice(from).map(x => x[2]));
+  ok(peakW >= bedW + 0.3, `nota tepe ${peakW.toFixed(2)} >> yatak ${bedW.toFixed(2)}`);
+  await wait(80);
+  const after = r.log[r.log.length - 1];
+  ok(after[1] >= 0.15 && Math.abs(after[2] - bedW) < 0.02, 'nota bitince yatak devam ediyor');
+  // dusuk guc ayarinda bile yatak motoru dondurecek kadar
+  h.setStrength(0.2); await wait(40);
+  ok(r.log[r.log.length - 1][1] >= 0.1, `guc %20: yatak ${r.log[r.log.length - 1][1].toFixed(2)} hissedilir`);
+  h.stop();
 }
 
 console.log('D) Guc ayari olcekler; 0 = titresim yok');

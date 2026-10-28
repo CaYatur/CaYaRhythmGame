@@ -21,14 +21,25 @@ function crc32(bytes) {
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
+// titreşim çıkış raporları arası en kısa süre (ms) — giriş raporlarına bant bırak
+const OUT_GAP = 24;
+
 export class DualSenseHID {
   constructor() {
     this.device = null;
     this.bluetooth = false;
     this._timer = null;
     this.onDisconnect = null;
-    // ayrıştırılmış güncel buton durumu (input.js her kare okur)
+    // ayrıştırılmış güncel buton durumu
     this.buttons = null;
+    // her giriş raporunda HEMEN çağrılır (buttons, zaman damgası ms): input.js
+    // kenarları kare beklemeden ve raporun gerçek zamanıyla işler
+    this.onButtons = null;
+    // titreşim çıkışı: aynı anda tek rapor, en son değer kazanır (bkz. setMotors)
+    this._want = null;
+    this._busy = false;
+    this._sent = null;
+    this._lastOut = 0;
     this._onInput = (e) => this._parseInput(e);
     if (this.supported) {
       navigator.hid.addEventListener('disconnect', (e) => {
@@ -113,12 +124,42 @@ export class DualSenseHID {
       r2: !!(b1 & 0x08) || r2axis > 100,
       options: !!(b1 & 0x20)
     };
+    if (this.onButtons) this.onButtons(this.buttons, e.timeStamp || performance.now());
   }
 
-  async setMotors(left, right) {
+  // Titreşim isteği. Çıkış raporları KUYRUKLANMAZ: bir rapor yoldayken gelen
+  // istekler yalnız son değeri günceller; aynı değer tekrar gönderilmez ve
+  // raporlar arasında en az OUT_GAP ms vardır. (Aksi halde 60 Hz karıştırıcı,
+  // özellikle Bluetooth'ta, rapor birikimiyle giriş raporlarını geciktiriyordu:
+  // akorlarda ve boost sırasında tuşlar geç algılanıyordu.)
+  setMotors(left, right) {
     if (!this.connected) return;
     const l = Math.max(0, Math.min(255, Math.round(left)));
     const r = Math.max(0, Math.min(255, Math.round(right)));
+    this._want = [l, r];
+    if (!this._busy) this._pump();
+  }
+
+  async _pump() {
+    this._busy = true;
+    while (this._want && this.connected) {
+      const [l, r] = this._want;
+      this._want = null;
+      if (this._sent && this._sent[0] === l && this._sent[1] === r) continue;
+      const wait = OUT_GAP - (performance.now() - this._lastOut);
+      if (wait > 0) {
+        this._want = this._want || [l, r];
+        await new Promise(res => setTimeout(res, wait));
+        continue; // beklerken gelen daha yeni deger varsa o gonderilir
+      }
+      this._lastOut = performance.now();
+      await this._sendMotors(l, r);
+      this._sent = [l, r];
+    }
+    this._busy = false;
+  }
+
+  async _sendMotors(l, r) {
     try {
       if (this.bluetooth) {
         // Linux hid-playstation sürücüsüne göre BT çıktı raporu 0x31:

@@ -44,7 +44,7 @@ export const DIFFICULTIES = {
 // Enstruman parcalari. feedback: kacirinca miksin hangi kismi kisilir (mixer.js)
 export const MODES = {
   vocal: { labelKey: 'mode.vocal', iconId: 'ico-mic', descKey: 'mode.vocal.desc', feedback: 'vocal', color: '#f0509b' },
-  melody: { labelKey: 'mode.melody', iconId: 'ico-wave', descKey: 'mode.melody.desc', feedback: 'vocal', color: '#35c4f0' },
+  melody: { labelKey: 'mode.melody', iconId: 'ico-wave', descKey: 'mode.melody.desc', feedback: 'lead', color: '#35c4f0' },
   bass: { labelKey: 'mode.bass', iconId: 'ico-bass', descKey: 'mode.bass.desc', feedback: 'bass', color: '#59d96b' },
   drums: { labelKey: 'mode.drums', iconId: 'ico-drum', descKey: 'mode.drums.desc', feedback: 'drums', color: '#ffc83d' },
   mixed: { labelKey: 'mode.mixed', iconId: 'ico-band', descKey: 'mode.mixed.desc', feedback: 'mix', color: '#b57cff' }
@@ -52,14 +52,33 @@ export const MODES = {
 // eski kayitlar ('instrument' modu) -> yeni davul parcasi
 export const LEGACY_MODES = { instrument: 'drums' };
 
-// deterministik sozde-rastgele (ayni sarki ayni harita)
-function makeRng(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0;
-    return s / 4294967296;
+// Icerikten turetilen deterministik "rastgele" (0..1). Sirali bir rng, ikinci
+// nakarati birincisinden farkli haritaliyordu (onceki tum secimler sayaci
+// kaydiriyor). Yalniz yerel muzikal icerikten (tur, olcu ici konum, perde)
+// turetilince tekrar eden bolumler AYNI kalipla calinir — elle yazilmis
+// haritalardaki gibi ezberlenebilir.
+function contentRand(...xs) {
+  let h = 2166136261;
+  for (const x of xs) { h ^= (x | 0) & 0xffff; h = Math.imul(h, 16777619); h ^= h >>> 13; }
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  return ((h ^ (h >>> 13)) >>> 0) / 4294967296;
+}
+
+// kesirli vurus indeksi (vurus listesi uzerinde dogrusal)
+function makeBeatPos(beats) {
+  if (!beats || beats.length < 2) return (t) => t * 2;
+  return (t) => {
+    let lo = 0, hi = beats.length - 1;
+    if (t <= beats[0]) return (t - beats[0]) / (beats[1] - beats[0]);
+    if (t >= beats[hi]) return hi + (t - beats[hi]) / (beats[hi] - beats[hi - 1]);
+    while (lo < hi - 1) { const m = (lo + hi) >> 1; if (beats[m] <= t) lo = m; else hi = m; }
+    return lo + (t - beats[lo]) / (beats[hi] - beats[lo]);
   };
 }
+
+const TYPE_CODE = { kick: 1, snare: 2, hat: 3, bass: 4, vocal: 5, melody: 6 };
+// oyuncunun acip kapatabildigi nota turleri
+export const NOTE_TOGGLES = ['hold', 'lift', 'roll', 'accent', 'chord'];
 
 const MELODIC = new Set(['vocal', 'melody', 'bass']);
 
@@ -91,13 +110,17 @@ function makeSnapper(beats, beatPeriod, div) {
   };
 }
 
-// opts: { lefty: seritleri aynala, range: [t0, t1] yalniz bu araliktaki notalar (pratik) }
+// opts: { lefty: seritleri aynala, range: [t0, t1] yalniz bu araliktaki notalar (pratik),
+//         types: { hold, lift, roll, accent, chord } false = o tur kapali,
+//         offMode: 'replace' (kapali tur yerine uygun nota) | 'empty' (bos birak) }
 export function buildChart(analysis, diffKey, modeKey, opts = {}) {
   modeKey = LEGACY_MODES[modeKey] || modeKey;
   const cfg = DIFFICULTIES[diffKey];
   const L = cfg.lanes;
   const ev = analysis.events;
-  const rng = makeRng(Math.floor(analysis.duration * 1000) ^ (diffKey.length << 8) ^ modeKey.length);
+  const beatPos = makeBeatPos(analysis.beats);
+  // olcu ici 16'lik konum (0..15): icerik anahtari
+  const slotOf = (t) => ((Math.round(beatPos(t) * 4) % 16) + 16) % 16;
   const snap = makeSnapper(analysis.beats, analysis.beatPeriod, cfg.snapDiv);
 
   // 1) Aday havuzu (mod filtresi)
@@ -108,8 +131,15 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
   if (modeKey === 'vocal') {
     push(ev.vocal, 'vocal');
   } else if (modeKey === 'melody') {
-    push(ev.melody, 'melody');
-    if (pool.length < 16) push(ev.vocal, 'vocal');
+    // Lead = enstruman partisi (gitar/synth/piyano): stereo genis harmonik
+    // akistaki ataklar. Mono kayitta (yan kanal bos) ya da eski analizde bu akis
+    // yoksa/cok seyrekse baskin melodi hattina dusulur.
+    const inst = ev.inst || [];
+    if (inst.length >= Math.max(16, analysis.duration / 60 * 20)) push(inst, 'melody');
+    else {
+      push(ev.melody, 'melody');
+      if (pool.length < 16) push(ev.vocal, 'vocal');
+    }
   } else if (modeKey === 'bass') {
     push(ev.bass, 'bass');
   } else if (modeKey === 'drums') {
@@ -140,9 +170,17 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
   const pHi = pitches.length ? pitches[Math.floor(pitches.length * 0.92)] : 70;
 
   // 2) Guc esigi (melodik tipler hafif avantajli — melodi hissi korunur)
+  const GRID_BONUS = {
+    easy: (on4, on8) => (on4 ? 0.12 : on8 ? -0.08 : -0.2),
+    medium: (on4, on8) => (on4 ? 0.06 : on8 ? 0 : -0.12)
+  }[diffKey];
   pool = pool.filter(e => {
     if (e.roll) return true;
-    const bonus = MELODIC.has(e.type) ? 0.12 : (e.type === 'kick' ? 0.06 : 0);
+    let bonus = MELODIC.has(e.type) ? 0.12 : (e.type === 'kick' ? 0.06 : 0);
+    if (GRID_BONUS && analysis.beats && analysis.beats.length > 8) {
+      const bp = beatPos(e.t);
+      bonus += GRID_BONUS(Math.abs(bp - Math.round(bp)) < 0.09, Math.abs(bp * 2 - Math.round(bp * 2)) < 0.18);
+    }
     const dyn = (intensityAt(e.t) - 0.5) * 0.14; // yogun bolumde esik duser
     return (e.s + bonus + dyn) >= cfg.strengthCut;
   });
@@ -189,23 +227,41 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
 
   // 5) serit atama
   const lastLaneTime = new Array(L).fill(-99);
-  let snareFlip = 0, hatFlip = 0;
+  // melodik: yerel kontur (+-4 sn penceresinin perde araligi) + genel register.
+  // Dar aralikli bir melodi de tum seritlere yayilir; yukari giden melodi saga
+  // gider; ayni ezgi sarkinin neresinde gelirse gelsin ayni seritlere duser.
+  const localP = new Map();
+  for (let i = 0, a = 0, b = 0; i < kept.length; i++) {
+    const e = kept[i];
+    if (!MELODIC.has(e.type) || !(e.pitch > 0)) continue;
+    while (kept[a].t < e.t - 4) a++;
+    while (b < kept.length && kept[b].t <= e.t + 4) b++;
+    const ps = [];
+    for (let k = a; k < b; k++) if (MELODIC.has(kept[k].type) && kept[k].pitch > 0) ps.push(kept[k].pitch);
+    ps.sort((x, y) => x - y);
+    let lo = ps[Math.floor((ps.length - 1) * 0.1)], hi = ps[Math.ceil((ps.length - 1) * 0.9)];
+    if (hi - lo < 6) { const mid = (lo + hi) / 2; lo = mid - 3; hi = mid + 3; } // kucuk kipirtilar serit atlatmasin
+    localP.set(e, Math.max(0, Math.min(1, (e.pitch - lo) / (hi - lo))));
+  }
   const laneOf = (e) => {
     let lane;
+    const bp = beatPos(e.t);
     switch (e.type) {
       case 'kick': lane = 0; break;
-      case 'snare': lane = 1 + (snareFlip++ % 2); break;
-      case 'hat': lane = L - 1 - (hatFlip++ % 2); break;
+      // trampet: vurus paritesi (ardisik vuruslar farkli serit); hat: 8'lik paritesi
+      case 'snare': lane = 1 + (((Math.round(bp) % 2) + 2) % 2); break;
+      case 'hat': lane = L - 1 - (((Math.round(bp * 2) % 2) + 2) % 2); break;
       case 'bass': case 'vocal': case 'melody': {
         if (e.pitch > 0 && pHi > pLo) {
-          const p = Math.max(0, Math.min(1, (e.pitch - pLo) / (pHi - pLo)));
+          const g = Math.max(0, Math.min(1, (e.pitch - pLo) / (pHi - pLo)));
+          const p = localP.has(e) ? 0.65 * localP.get(e) + 0.35 * g : g;
           lane = Math.round(p * (L - 1));
         } else {
-          lane = Math.floor(rng() * L);
+          lane = Math.floor(contentRand(TYPE_CODE[e.type] || 9, slotOf(e.t)) * L);
         }
         break;
       }
-      default: lane = Math.floor(rng() * L);
+      default: lane = Math.floor(contentRand(TYPE_CODE[e.type] || 9, slotOf(e.t)) * L);
     }
     return Math.max(0, Math.min(L - 1, lane));
   };
@@ -271,7 +327,8 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
       const end = snap(e.t + e.dur);
       // kisa surdurulen nota -> birak notasi; uzunlarin bir kismi da (cesitlilik)
       const shortSus = e.dur < cfg.holdMin;
-      if (cfg.lifts > 0 && end - e.t >= 0.28 && e.dur <= 1.4 && (shortSus || rng() < 0.22) && rng() < cfg.lifts) {
+      const key = [TYPE_CODE[e.type], slotOf(e.t), Math.round(e.pitch), Math.round(e.dur * 8)];
+      if (cfg.lifts > 0 && end - e.t >= 0.28 && e.dur <= 1.4 && (shortSus || contentRand(11, ...key) < 0.22) && contentRand(12, ...key) < cfg.lifts) {
         liftAt = end;
       } else if (e.dur >= cfg.holdMin) {
         dur = Math.min(e.dur, 6);
@@ -285,7 +342,7 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
     if (liftAt) notes.push({ id: id++, time: liftAt, lane, dur: 0, type: 'lift', boost: false, s: e.s });
 
     // akor: ikinci nota yalniz karsi bolge bossa eklenir (boylece her el 1 nota)
-    if (e.chordWith && rng() < cfg.chordChance && e.s > 0.5) {
+    if (e.chordWith && contentRand(13, TYPE_CODE[e.type], slotOf(e.t), Math.round(e.pitch)) < cfg.chordChance && e.s > 0.5) {
       const oz = 1 - zone;
       if (e.t >= zoneBusyUntil[oz]) {
         const c = oldestLane(zoneLanes[oz], e.t);
@@ -332,6 +389,10 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
     for (let i = notes.length - 1; i >= 0; i--) if (notes[i].time < r0 || notes[i].time > r1) notes.splice(i, 1);
   }
 
+  // kapali nota turleri: yerine uygun nota ya da bos birak
+  const types = Object.assign({ hold: true, lift: true, roll: true, accent: true, chord: true }, opts.types || {});
+  applyToggles(notes, types, opts.offMode !== 'empty', cfg, snap);
+
   notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
   notes.forEach((n, i) => { n.id = i; });
 
@@ -348,7 +409,7 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
   }
 
   // vurgu (accent): en guclu %~10, vurus izgarasina denk gelen, aralarinda >=2.4 sn
-  if (notes.length > 8) {
+  if (notes.length > 8 && types.accent) {
     const beats = analysis.beats || [];
     const onBeat = (t) => {
       let lo = 0, hi = beats.length - 1;
@@ -416,6 +477,46 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
       maxScore: idealScore(notes)
     }
   };
+}
+
+// Kapali turleri donustur (fill=true) ya da kaldir (fill=false). Yerinde degisir.
+//   hold  -> ayni zamanda normal nota             | kaldir
+//   lift  -> birakma aninda normal nota           | kaldir (onceki nota kalir)
+//   roll  -> rulo boyunca aralikli normal notalar | kaldir
+//   chord -> yalniz en guclu nota kalir           | o andaki tum notalar kaldirilir
+function applyToggles(notes, types, fill, cfg, snap) {
+  const out = [];
+  for (const n of notes) {
+    if (n.type === 'hold' && !types.hold) { if (fill) out.push(Object.assign(n, { type: 'tap', dur: 0 })); continue; }
+    if (n.type === 'lift' && !types.lift) { if (fill) out.push(Object.assign(n, { type: 'tap', dur: 0 })); continue; }
+    if (n.type === 'roll' && !types.roll) {
+      if (fill) {
+        const step = Math.max(cfg.jackGap, 0.25);
+        let last = -9;
+        for (let t = n.time; t <= n.time + n.dur + 1e-6; t += step) {
+          const ts = snap(t);
+          if (ts - last < step * 0.8) continue;
+          out.push({ id: 0, time: ts, lane: n.lane, dur: 0, type: 'tap', boost: false, s: n.s, section: n.section });
+          last = ts;
+        }
+      }
+      continue;
+    }
+    out.push(n);
+  }
+  if (!types.chord) {
+    out.sort((a, b) => a.time - b.time || b.s - a.s);
+    for (let i = 0; i < out.length; i++) {
+      let j = i;
+      while (j + 1 < out.length && Math.abs(out[j + 1].time - out[i].time) < 0.002) j++;
+      if (j > i) {
+        if (fill) out.splice(i + 1, j - i); // en guclu (ilk) kalir
+        else { out.splice(i, j - i + 1); i--; }
+      }
+    }
+  }
+  notes.length = 0;
+  notes.push(...out);
 }
 
 // Kusursuz oyunun (boost'suz) puani: yildiz esikleri buna gore hesaplanir.

@@ -79,6 +79,7 @@ for (const f of readdirSync(refDir).filter(f => f.endsWith('.json')).sort()) {
   const { L, R } = decode(audio, ref.start, ref.dur);
   self.onmessage({ data: { cmd: 'analyze', left: L, right: R, sampleRate: SR, debug: true, tune: TUNE } });
   const a = result;
+  if (!ref.midi && ref.vocal) ref.midi = ref.vocal.midi; // make-stem-refs.py bicimi
   const hop = ref.hop, N = ref.midi.length;
   // tahmin konturu: her vokal segmenti [t, t+len) boyunca sabit perde
   const est = new Float32Array(N);

@@ -719,6 +719,17 @@ kbd {
 }
 .nl-chip b { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); font-weight: 600; }
 .nl-chip svg { width: 18px; height: 14px; flex: 0 0 auto; }
+button.nl-chip { font: inherit; font-size: 0.74rem; cursor: pointer; transition: opacity 0.15s, border-color 0.15s, background 0.15s; }
+button.nl-chip:hover { border-color: var(--accent); }
+button.nl-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.nl-chip.off { opacity: 0.45; text-decoration: line-through; background: transparent; border-style: dashed; }
+.nl-off { display: inline-flex; align-items: center; gap: 0.25rem; flex-wrap: wrap; margin-left: 0.2rem; }
+.nl-off small { color: var(--muted); font-size: 0.7rem; margin-right: 0.15rem; }
+.nl-off button {
+  font: inherit; font-size: 0.7rem; padding: 0.2rem 0.5rem; border-radius: 999px; cursor: pointer;
+  background: transparent; color: var(--muted); border: 1px solid var(--hair);
+}
+.nl-off button[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: rgba(255, 255, 255, 0.06); }
 .hud-milestone {
   font-size: 1.5rem; font-weight: 900; letter-spacing: 0.12em; white-space: nowrap; min-height: 1.6rem;
   background: linear-gradient(90deg, var(--accent2), #fff, var(--pink));
