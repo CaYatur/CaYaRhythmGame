@@ -383,15 +383,16 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
     n.section = si;
   }
 
+  // kapali nota turleri: yerine uygun nota ya da bos birak (pratik araligindan
+  // ONCE: rulo yerine konan notalar araligin disina tasmasin)
+  const types = Object.assign({ hold: true, lift: true, roll: true, accent: true, chord: true }, opts.types || {});
+  applyToggles(notes, types, opts.offMode !== 'empty', cfg, snap);
+
   // pratik: yalniz secili zaman araligi
   if (opts.range) {
     const [r0, r1] = opts.range;
     for (let i = notes.length - 1; i >= 0; i--) if (notes[i].time < r0 || notes[i].time > r1) notes.splice(i, 1);
   }
-
-  // kapali nota turleri: yerine uygun nota ya da bos birak
-  const types = Object.assign({ hold: true, lift: true, roll: true, accent: true, chord: true }, opts.types || {});
-  applyToggles(notes, types, opts.offMode !== 'empty', cfg, snap);
 
   notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
   notes.forEach((n, i) => { n.id = i; });
