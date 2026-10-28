@@ -15,7 +15,7 @@ const HOLD_TICK_DT = 0.1;
 const HOLD_BONUS = 50;          // tamamlama bonusu
 const MULT_STEPS = [0, 10, 20, 30, 40, 50]; // kombo esikleri -> 1x..6x
 const MAX_BARS = 4;             // boost bari sayisi
-const BOOST_PER_BAR = 5;        // bar basina boost suresi (sn) — 4 bar = 20 sn
+const BOOST_PER_BAR = 2.5;      // bar basina boost suresi (sn) — 4 bar = 10 sn
 const ACCENT_BONUS = 0.5;       // vurgu notasi: Kusursuz/Harika'da +%50
 const ROLL_TICK = 20;           // rulo basisi basina (gerekenin 1.5 katina kadar)
 const ROLL_BONUS = 60;          // rulo tamamlama bonusu
