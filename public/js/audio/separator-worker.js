@@ -172,11 +172,11 @@ const DEC_TAPS = (() => {
   for (let i = 0; i < n; i++) h[i] /= s;
   return h;
 })();
-function decimate2(x) {
-  const n = x.length >> 1, y = new Float32Array(n), H = DEC_TAPS, half = (H.length - 1) >> 1;
+function decimate2(x, len = x.length) {
+  const n = len >> 1, y = new Float32Array(n), H = DEC_TAPS, half = (H.length - 1) >> 1;
   for (let i = 0; i < n; i++) {
     const c = 2 * i; let acc = 0;
-    for (let k = 0; k < H.length; k++) { const j = c + k - half; if (j >= 0 && j < x.length) acc += H[k] * x[j]; }
+    for (let k = 0; k < H.length; k++) { const j = c + k - half; if (j >= 0 && j < len) acc += H[k] * x[j]; }
     y[i] = acc;
   }
   return y;
@@ -234,7 +234,10 @@ async function fetchPieces() {
 
 async function ensureSession() {
   if (pieces) return;
-  if (!(self.navigator && navigator.gpu)) throw new Error('no-webgpu');
+  // navigator.gpu olsa da adaptor null olabilir (desteklenmeyen GPU/surucu):
+  // 126 MB'i indirmeden once dogrula
+  const adapter = self.navigator && navigator.gpu ? await navigator.gpu.requestAdapter().catch(() => null) : null;
+  if (!adapter) throw new Error('no-webgpu');
   await loadOrt();
   const { manifest, bufs } = await fetchPieces();
   post('progress', { stage: 'init', pct: 0 });
@@ -274,15 +277,22 @@ async function runChain(wave, mag) {
   }
 }
 
+// Segmentler cikista 22050 Hz monoya indirgenip orada ust uste eklenir: tam
+// uzunlukta 44.1 kHz biriktiriciler 7 dakikalik sarkida yuzlerce MB tutardi.
+// Ucgen agirlik segment kenarlarinda ~0 oldugundan indirgeme filtresinin
+// kenar etkisi sonuca karismaz.
 async function separate(left, right) {
   const total = left.length;
-  const stride = Math.floor(SEG * (1 - OVERLAP));
+  const stride = Math.floor(SEG * (1 - OVERLAP) / 2) * 2; // cift: 22050 Hz'de tam ornek
   const nSeg = Math.max(1, Math.ceil(Math.max(0, total - SEG) / stride) + 1);
-  const acc = TRACKS.map(() => new Float32Array(total));
-  const wsum = new Float32Array(total);
-  // ucgen agirlik (demucs apply_model, transition_power=1)
-  const wt = new Float32Array(SEG);
-  for (let i = 0; i < SEG; i++) wt[i] = Math.min(i + 1, SEG - i);
+  const total2 = total >> 1;
+  const acc = TRACKS.map(() => new Float32Array(total2));
+  const wsum = new Float32Array(total2);
+  // ucgen agirlik (demucs apply_model, transition_power=1), 22050 Hz izgarasinda
+  const SEG2 = SEG >> 1;
+  const wt = new Float32Array(SEG2);
+  for (let i = 0; i < SEG2; i++) wt[i] = Math.min(i + 1, SEG2 - i);
+  const mono = new Float32Array(SEG);
   const segL = new Float32Array(SEG), segR = new Float32Array(SEG);
   const t0 = performance.now();
   const prof = { pre: 0, run: 0, post: 0 };
@@ -299,11 +309,14 @@ async function separate(left, right) {
     const { xt, xf } = await runChain(wave, mag);
     prof.run += performance.now() - tp; tp = performance.now();
     const fmono = freqToMono(xf);
+    const s2 = start >> 1, len2 = Math.min(len >> 1, total2 - s2);
     for (let k = 0; k < 4; k++) {
       const a = acc[k], tl = k * 2 * SEG, tr = tl + SEG, fm = fmono[k];
-      for (let i = 0; i < len; i++) a[start + i] += (0.5 * (xt[tl + i] + xt[tr + i]) + fm[i]) * wt[i];
+      for (let i = 0; i < len; i++) mono[i] = 0.5 * (xt[tl + i] + xt[tr + i]) + fm[i];
+      const y = decimate2(mono, len);
+      for (let i = 0; i < len2; i++) a[s2 + i] += y[i] * wt[i];
     }
-    for (let i = 0; i < len; i++) wsum[start + i] += wt[i];
+    for (let i = 0; i < len2; i++) wsum[s2 + i] += wt[i];
     prof.post += performance.now() - tp;
     const el = (performance.now() - t0) / 1000;
     post('progress', { stage: 'separating', pct: Math.round((s + 1) / nSeg * 100), eta: el / (s + 1) * (nSeg - s - 1) });
@@ -311,9 +324,8 @@ async function separate(left, right) {
   const stems = {};
   for (let k = 0; k < 4; k++) {
     const a = acc[k];
-    for (let i = 0; i < total; i++) if (wsum[i] > 0) a[i] /= wsum[i];
-    stems[TRACKS[k]] = decimate2(a);
-    acc[k] = null;
+    for (let i = 0; i < total2; i++) if (wsum[i] > 0) a[i] /= wsum[i];
+    stems[TRACKS[k]] = a;
   }
   return { stems, seconds: (performance.now() - t0) / 1000, prof };
 }

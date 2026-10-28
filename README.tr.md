@@ -167,6 +167,8 @@ npm start                   # http://localhost:3000 adresinde açılır
 | Bulunan vokal heceleri | %29 | **%56** |
 | Usta haritalarda gerçek olaya denk gelen nota (davul / bas / lead / vokal) | %82 / %63 / %77 / %85 | **%95 / %84 / %80 / %91** |
 
+Bir uyarı: davul, bas ve Lead referansları, kanal algılayıcılarının kullandığına benzer bant-vuruş kurallarıyla üretilir. Vokal "hece" referansları da spektral akış tepeleridir. Yani kazancın bir kısmı iki tanımın birbirine uymasından gelir. Tamamen bağımsız denetim, `npm test` içindeki kusursuz-kanal senaryosudur: notaları bilinen sentetik bir şarkıcı. Bu senaryoda vokal F1 %93, perde %99'dur ve synth tuzaklarında hiç yanlış nota çıkmaz.
+
 **18 gerçek şarkıda** (pop, rap, R&B, EDM, phonk, rock; referanslar Demucs kanallarından, vokal pYIN ile):
 - **Vokal perde doğruluğu:** %48'den **%73**'e çıkar.
 - **Bulunan heceler:** %34'ten **%62**'ye çıkar.

@@ -1336,8 +1336,10 @@ function salAtPath(sal, path, F) {
 //      sizinti nota olmasin
 //   3. hece tepeleri: 150 Hz-5 kHz log spektral akis (SuperFlux benzeri)
 //   4. nota sinirlari: sesli bolge baslangici (onundeki unsuz hece tepesine
-//      cekilir), kalici >=1 yarim ton perde degisimi, ayni perdede enerji
-//      cukurlu yeni hece; unluye baglanmayan guclu perdesiz hece (rap) ayri nota
+//      dogru yari yola cekilir: unsuz vurustan once baslar, unlu vurusa oturur;
+//      sentetik sarkicida medyan sapma -28 ms -> -5 ms), kalici >=1 yarim ton
+//      perde degisimi, ayni perdede enerji cukurlu yeni hece; unluye
+//      baglanmayan guclu perdesiz hece (rap) ayri nota
 // Olcum (Demucs ile ayrilmis vokal, bagimsiz pYIN referansi, 18 gercek sarki):
 // perde dogrulugu %48 -> %73, hece kapsama %34 -> %62, Usta haritada notalarin
 // gercek heceye denk gelmesi %78 -> %89.
@@ -1346,7 +1348,7 @@ const VS_W = 1024, VS_TMAX = 320, VS_N = 2048;
 function vocalFromStem(x, acc, tune) {
   const o = Object.assign({
     apThr: 0.3, dbFloor: -30, accDb: -18, yinThr: 0.15, fluxRel: 0.15, fluxLoc: 1.3, minSep: 7,
-    semiRun: 5, dipRatio: 0.85, sylMinGap: 6, consMerge: 10, unvStrong: 0.35, minLen: 5
+    semiRun: 5, dipRatio: 0.85, sylMinGap: 6, consMerge: 10, consShift: 0.5, unvStrong: 0.35, minLen: 5
   }, tune.vstem || {});
   const F = Math.max(0, Math.floor((x.length - VS_W - VS_TMAX) / HOP) + 1);
   if (F < 8) return [];
@@ -1477,7 +1479,7 @@ function vocalFromStem(x, acc, tune) {
       let st = i;
       for (let k = i; k >= Math.max(0, i - o.consMerge); k--) { if (syl[k]) { st = k; break; } if (k < i && midi[k] > 0) break; }
       if (notes.length && st <= notes[notes.length - 1].i) st = i;
-      cur = { i: st, syl: st !== i || !!syl[i] }; ref = midi[i]; dev = 0;
+      cur = { i: Math.round(i - o.consShift * (i - st)), syl: st !== i || !!syl[i] }; ref = midi[i]; dev = 0;
       continue;
     }
     if (Math.abs(midi[i] - ref) >= 1) {
@@ -1514,6 +1516,11 @@ function vocalFromStem(x, acc, tune) {
 // kanalda gereksizdir; her kanal kendi bandinda dogrudan okunur. MUSDB18 test
 // kesitlerinde (gercek kanallardan referans) F1: kick %46 -> %72, trampet+hat
 // %71 -> %85, bas %51 -> %67 (perde sinifi %67 -> %77), lead %63 -> %76.
+// Zaman kalibrasyonu: pencere ortasi damgasina eklenir. Akis tepesi ani
+// ataklarda pencere ortasindan once olusur; bilinen anlarda vurulan sentetik
+// kanallarla olculdu (tools/ disi gelistirme betigi), miks yolu ONSET_OFFSET ile
+// ayni ~0 ms hedefine getirir.
+const STEM_T_DRUMS = 0.006, STEM_T_BASS = 0.023, STEM_T_INST = 0.004;
 const STEM_FFT = {};
 const stemFFT = (n) => STEM_FFT[n] || (STEM_FFT[n] = makeFFT(n));
 function stemPctl(arr, q) {
@@ -1584,7 +1591,7 @@ function stemPeaks(env, rel, minSep) {
 }
 
 function drumsFromStem(x) {
-  const N = 1024, cen = N / 2 / SR;
+  const N = 1024, cen = N / 2 / SR + STEM_T_DRUMS;
   const kE = stemFlux(stemLogSpec(x, N, 30, 120));
   const sE = stemFlux(stemLogSpec(x, N, 200, 5000));
   const hE = stemFlux(stemLogSpec(x, N, 7000, 11000));
@@ -1704,7 +1711,7 @@ function bassFromStem(x0) {
   }
   const merged = [];
   for (const i of [...on].sort((a, b) => a - b)) if (!merged.length || i - merged[merged.length - 1] >= 6) merged.push(i);
-  const cen = 512 / 2 / sr, evs = [];
+  const cen = 512 / 2 / sr + STEM_T_BASS, evs = [];
   for (let k = 0; k < merged.length; k++) {
     const i = merged[k], nx = k + 1 < merged.length ? merged[k + 1] : F;
     const ps = [];
@@ -1725,7 +1732,7 @@ function bassFromStem(x0) {
 // enstruman (diger kanal): 120 Hz-8 kHz akis tepeleri; perde YIN (akorlarda
 // aperiyodik -> komsu notanin perdesi), sure enerji yariya inene kadar
 function instFromStem(x) {
-  const N = 1024, cen = N / 2 / SR;
+  const N = 1024, cen = N / 2 / SR + STEM_T_INST;
   const env = stemFlux(stemLogSpec(x, N, 120, 8000));
   const pk = stemPeaks(env, 0.15, 6);
   const needF = new Uint8Array(env.length + 16);

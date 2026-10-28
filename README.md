@@ -148,6 +148,8 @@ On **vocals**, scored with MIREX metrics against the Demucs vocal stem (`tools/r
 | Vocal syllables found | 29% | **56%** |
 | Master charts, notes on a real event (drums / bass / lead / vocals) | 82% / 63% / 77% / 85% | **95% / 84% / 80% / 91%** |
 
+One caveat: the drum, bass and Lead references come from band-onset rules similar to the ones the stem detectors use, and the vocal "syllable" references are spectral-flux peaks too, so part of the gain is the two definitions agreeing. The fully independent check is the perfect-stem scenario in `npm test`, a synthetic singer with known notes. It reaches vocal F1 93% and pitch 99%, with no false notes on the synth decoys.
+
 On **18 real songs** (pop, rap, R&B, EDM, phonk, rock; references from Demucs stems, vocals with pYIN): vocal pitch accuracy goes from **48% to 73%**, syllables found from **34% to 62%**, and Master vocal notes landing on a real syllable from **78% to 89%**. Songs without singing no longer get a vocal chart made of synths: across 31 full songs, instrumental tracks that used to get 159–599 "vocal" notes on Medium now get 2–58.
 
 The tables above this one measure the classic analysis. It is what runs without WebGPU.

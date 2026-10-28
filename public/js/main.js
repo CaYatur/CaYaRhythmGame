@@ -309,6 +309,7 @@ async function openFromLibrary(id) {
   const rec = await loadSong(id).catch(() => null);
   if (!rec) return;
   const data = await rec.file.arrayBuffer();
+  await gpuReady;
   if (rec.version !== ANALYSIS_VERSION || needsAiReanalysis(rec.analysis)) { await handleFile(rec.name, data, { size: rec.size, type: rec.type, force: true }); return; }
   try {
     state.audioBuffer = await decodeAudio(data, audioCtx());
@@ -359,23 +360,29 @@ function bindSettings() {
   toggle('set-nofail', 'noFail');
   toggle('set-lefty', 'lefty', renderCards);
   toggle('set-aisep', 'aiSep');
-  if (!navigator.gpu) {
+  gpuReady.then(ok => {
+    if (ok) return;
     const el = $('set-aisep');
     el.disabled = true;
     const small = el.closest('label').querySelector('small');
     small.dataset.i18n = 'set.aisep.nogpu';
     small.textContent = t('set.aisep.nogpu');
-  }
+  });
 }
 
 // ---------- dosya yukleme & analiz ----------
-const aiSepAvailable = () => !!settings.aiSep && !!navigator.gpu;
+// navigator.gpu olsa da adaptor null olabilir (desteklenmeyen GPU/surucu)
+let gpuOk = false;
+const gpuReady = (navigator.gpu ? navigator.gpu.requestAdapter().then(a => !!a, () => false) : Promise.resolve(false))
+  .then(ok => (gpuOk = ok));
+const aiSepAvailable = () => !!settings.aiSep && gpuOk;
 // yapay zeka ayirmasi acik/mumkun ama sarki klasik analizle kaydedilmis ->
 // yeniden analiz (ayirma bir kez hatayla bittiyse tekrar deneme)
 const needsAiReanalysis = (a) => aiSepAvailable() && a && a.sepMode !== 'ai' && !a.sepError;
 async function handleFile(name, arrayBuffer, meta = {}) {
   const size = meta.size != null ? meta.size : arrayBuffer.byteLength;
   const id = songId(name, size);
+  await gpuReady;
   // daha once analiz edildiyse kutuphaneden ac (yeniden analiz yok)
   if (!meta.force) {
     const rec = await loadSong(id).catch(() => null);
