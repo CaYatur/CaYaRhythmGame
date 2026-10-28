@@ -144,13 +144,13 @@ On **vocals**, scored with MIREX metrics against the Demucs vocal stem (`tools/r
 | Snare + cymbal onset F1 | 70% | **83%** |
 | Bass onset F1 / pitch class | 49% / 68% | **66% / 80%** |
 | Instrument (Lead) onset F1 | 63% | **74%** |
-| Vocal pitch accuracy (±1 semitone) | 36% | **70%** |
-| Vocal syllables found | 29% | **55%** |
-| Master charts, notes on a real event (drums / bass / lead / vocals) | 82% / 63% / 77% / 85% | **95% / 84% / 80% / 91%** |
+| Vocal pitch accuracy (±1 semitone) | 36% | **69%** |
+| Vocal syllables found | 29% | **54%** |
+| Master charts, notes on a real event (drums / bass / lead / vocals) | 82% / 63% / 77% / 85% | **95% / 84% / 80% / 92%** |
 
 One caveat: the drum, bass and Lead references come from band-onset rules similar to the ones the stem detectors use, and the vocal "syllable" references are spectral-flux peaks too, so part of the gain is the two definitions agreeing. The fully independent check is the perfect-stem scenario in `npm test`, a synthetic singer with known notes. It reaches vocal F1 93% and pitch 99%, with no false notes on the synth decoys.
 
-On **18 real songs** (pop, rap, R&B, EDM, phonk, rock; references from Demucs stems, vocals with pYIN): vocal pitch accuracy goes from **48% to 72%**, syllables found from **34% to 61%**, and Master vocal notes landing on a real syllable from **78% to 89%**. Songs without singing no longer get a vocal chart made of synths: across 31 full songs, instrumental tracks that used to get 159–599 "vocal" notes on Medium now get 2–58.
+On **18 real songs** (pop, rap, R&B, EDM, phonk, rock; references from Demucs stems, vocals with pYIN): vocal pitch accuracy goes from **48% to 69%**, syllables found from **34% to 57%**, and Master vocal notes landing on a real syllable from **78% to 94%**. A per-note audibility check (a note far below the band, relative to how loud the song mixes its vocals, is dropped) keeps notes off masked backing vocals and separation leakage: **98%** of Master vocal notes fall where vocals are actually audible, up from 92% without it. Songs without singing no longer get a vocal chart made of synths: across 31 full songs, instrumental tracks that used to get 159–599 "vocal" notes on Medium now get 2–58.
 
 The tables above this one measure the classic analysis. It is what runs without WebGPU.
 

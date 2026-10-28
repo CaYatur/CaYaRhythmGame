@@ -1348,7 +1348,8 @@ const VS_W = 1024, VS_TMAX = 320, VS_N = 2048;
 function vocalFromStem(x, acc, tune) {
   const o = Object.assign({
     apThr: 0.3, dbFloor: -30, accDb: -18, yinThr: 0.15, fluxRel: 0.15, fluxLoc: 1.3, minSep: 7,
-    semiRun: 5, dipRatio: 0.85, sylMinGap: 6, consMerge: 10, consShift: 0.5, unvStrong: 0.35, minLen: 5
+    semiRun: 5, dipRatio: 0.85, sylMinGap: 6, consMerge: 10, consShift: 0.5, unvStrong: 0.35, minLen: 5,
+    noteAccDb: -14, notePkDb: -20
   }, tune.vstem || {});
   const F = Math.max(0, Math.floor((x.length - VS_W - VS_TMAX) / HOP) + 1);
   if (F < 8) return [];
@@ -1496,6 +1497,25 @@ function vocalFromStem(x, acc, tune) {
     }
   }
   close(F);
+  // duyulmayan notalar: nota boyunca ortalama seviye bandin cok altinda
+  // (maskelenmis arka vokal, sizinti) ya da kanalin kendi tepesinden cok
+  // dusuk. Kare kapisi (-18 dB) notayi bolmesin diye gevsek; karar nota
+  // basina verilir. Esik sarkiya goreli: vokali hep alcak miksli sarkida
+  // (nota medyani -17 dB) gercek sarki silinmesin diye medyan-4 dB, -18..-14
+  // arasinda. MUSDB18 (gercek kanallardan duyulurluk): sahte notalarin %63'u
+  // gider, gercek notalarin %3'u (zaten zor duyulanlar).
+  for (const n of notes) {
+    const i1 = Math.min(F, n.i + Math.max(2, Math.round(n.len / HOP_T)));
+    let sr = 0, sa = 0, c = 0;
+    for (let q = Math.max(0, n.i); q < i1; q++) { sr += rms[q]; sa += accRms[q]; c++; }
+    n.dbpk = 20 * Math.log10(sr / Math.max(1, c) / peak + 1e-9);
+    n.dbacc = acc ? 20 * Math.log10((sr + 1e-9) / (sa + 1e-9)) : 99;
+  }
+  if (notes.length) {
+    const pitched = notes.filter(n => !n.unv), ds = (pitched.length ? pitched : notes).map(n => n.dbacc).sort((a, b) => a - b);
+    const accGate = Math.min(o.noteAccDb, Math.max(o.noteAccDb - 4, ds[ds.length >> 1] - 4));
+    for (let k = notes.length - 1; k >= 0; k--) if (notes[k].dbacc < accGate || notes[k].dbpk < o.notePkDb) notes.splice(k, 1);
+  }
   // perdesiz notalara en yakin perdeli komsunun perdesi
   for (let k = 0; k < notes.length; k++) if (!notes[k].pitch) {
     let p = 0, bd = 1e9;
@@ -1506,7 +1526,7 @@ function vocalFromStem(x, acc, tune) {
   const cen = VS_W / 2 / SR;
   return notes.map((n, k) => {
     const ev = { t: Math.max(0, n.i * HOP_T + cen), s: Math.min(1, 0.25 + 0.75 * ranks[k]), pitch: Math.round(n.pitch * 10) / 10, dur: !n.unv && n.len >= 0.32 ? Math.min(n.len, 8) : 0 };
-    if (DEBUG) { ev.len = +n.len.toFixed(3); if (n.unv) ev.unv = true; }
+    if (DEBUG) { ev.len = +n.len.toFixed(3); ev.dbpk = +n.dbpk.toFixed(1); ev.dbacc = +n.dbacc.toFixed(1); if (n.unv) ev.unv = true; }
     return ev;
   });
 }
