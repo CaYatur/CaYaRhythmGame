@@ -110,6 +110,26 @@ function makeSnapper(beats, beatPeriod, div) {
   };
 }
 
+// Izgara guvenilir mi? Ritmik olaylarin 16'lik izgaraya +-20 ms icinde dusme
+// orani / rastgele beklenti. Dogru tempoda ~1.2-2.7, 3:2 gibi yanlis tempoda
+// cogunlukla <1.3 (gercek sarkilarla olculdu). Guvenilmezse notalar izgaraya
+// YAPISTIRILMAZ: yanlis izgara notalari muzikten 40 ms'ye kadar kaydirirdi.
+function gridQuality(beats, times) {
+  if (!beats || beats.length < 8 || times.length < 16) return 0;
+  let ok = 0, n = 0, rnd = 0;
+  for (const t of times) {
+    let lo = 0, hi = beats.length - 1;
+    if (t <= beats[0] || t >= beats[hi]) continue;
+    while (lo < hi - 1) { const m = (lo + hi) >> 1; if (beats[m] <= t) lo = m; else hi = m; }
+    const step = (beats[hi] - beats[lo]) / 4;
+    const k = Math.round((t - beats[lo]) / step);
+    n++; rnd += Math.min(1, 0.04 / step);
+    if (Math.abs(t - beats[lo] - k * step) <= 0.02) ok++;
+  }
+  return n && rnd ? ok / rnd : 0;
+}
+const GRID_MIN_QUALITY = 1.25;
+
 // opts: { lefty: seritleri aynala, range: [t0, t1] yalniz bu araliktaki notalar (pratik),
 //         types: { hold, lift, roll, accent, chord } false = o tur kapali,
 //         offMode: 'replace' (kapali tur yerine uygun nota) | 'empty' (bos birak) }
@@ -121,7 +141,9 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
   const beatPos = makeBeatPos(analysis.beats);
   // olcu ici 16'lik konum (0..15): icerik anahtari
   const slotOf = (t) => ((Math.round(beatPos(t) * 4) % 16) + 16) % 16;
-  const snap = makeSnapper(analysis.beats, analysis.beatPeriod, cfg.snapDiv);
+  const ev0 = analysis.events || {};
+  const gridQ = gridQuality(analysis.beats, [...(ev0.kick || []), ...(ev0.snare || []), ...(ev0.bass || [])].map(e => e.t));
+  const snap = gridQ >= GRID_MIN_QUALITY ? makeSnapper(analysis.beats, analysis.beatPeriod, cfg.snapDiv) : (t) => t;
 
   // 1) Aday havuzu (mod filtresi)
   let pool = [];
@@ -383,15 +405,16 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
     n.section = si;
   }
 
+  // kapali nota turleri: yerine uygun nota ya da bos birak (pratik araligindan
+  // ONCE: rulo yerine konan notalar araligin disina tasmasin)
+  const types = Object.assign({ hold: true, lift: true, roll: true, accent: true, chord: true }, opts.types || {});
+  applyToggles(notes, types, opts.offMode !== 'empty', cfg, snap);
+
   // pratik: yalniz secili zaman araligi
   if (opts.range) {
     const [r0, r1] = opts.range;
     for (let i = notes.length - 1; i >= 0; i--) if (notes[i].time < r0 || notes[i].time > r1) notes.splice(i, 1);
   }
-
-  // kapali nota turleri: yerine uygun nota ya da bos birak
-  const types = Object.assign({ hold: true, lift: true, roll: true, accent: true, chord: true }, opts.types || {});
-  applyToggles(notes, types, opts.offMode !== 'empty', cfg, snap);
 
   notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
   notes.forEach((n, i) => { n.id = i; });
@@ -474,6 +497,7 @@ export function buildChart(analysis, diffKey, modeKey, opts = {}) {
       boostGroups,
       nps: notes.length > 1 ? +(notes.length / span).toFixed(1) : 0,
       lowVocal: modeKey === 'vocal' && notes.length < 30,
+      gridQuality: +gridQ.toFixed(2),
       maxScore: idealScore(notes)
     }
   };
