@@ -163,16 +163,17 @@ npm start                   # http://localhost:3000 adresinde açılır
 | Trampet + zil vuruş F1 | %70 | **%83** |
 | Bas vuruş F1 / perde sınıfı | %49 / %68 | **%66 / %80** |
 | Enstrüman (Lead) vuruş F1 | %63 | **%74** |
-| Vokal perde doğruluğu (±1 yarım ton) | %36 | **%70** |
-| Bulunan vokal heceleri | %29 | **%55** |
-| Usta haritalarda gerçek olaya denk gelen nota (davul / bas / lead / vokal) | %82 / %63 / %77 / %85 | **%95 / %84 / %80 / %91** |
+| Vokal perde doğruluğu (±1 yarım ton) | %36 | **%69** |
+| Bulunan vokal heceleri | %29 | **%54** |
+| Usta haritalarda gerçek olaya denk gelen nota (davul / bas / lead / vokal) | %82 / %63 / %77 / %85 | **%95 / %84 / %80 / %92** |
 
 Bir uyarı: davul, bas ve Lead referansları, kanal algılayıcılarının kullandığına benzer bant-vuruş kurallarıyla üretilir. Vokal "hece" referansları da spektral akış tepeleridir. Yani kazancın bir kısmı iki tanımın birbirine uymasından gelir. Tamamen bağımsız denetim, `npm test` içindeki kusursuz-kanal senaryosudur: notaları bilinen sentetik bir şarkıcı. Bu senaryoda vokal F1 %93, perde %99'dur ve synth tuzaklarında hiç yanlış nota çıkmaz.
 
 **18 gerçek şarkıda** (pop, rap, R&B, EDM, phonk, rock; referanslar Demucs kanallarından, vokal pYIN ile):
-- **Vokal perde doğruluğu:** %48'den **%72**'ye çıkar.
-- **Bulunan heceler:** %34'ten **%61**'e çıkar.
-- **Gerçek heceye düşen Usta vokal notaları:** %78'den **%89**'a çıkar.
+- **Vokal perde doğruluğu:** %48'den **%69**'a çıkar.
+- **Bulunan heceler:** %34'ten **%57**'ye çıkar.
+- **Gerçek heceye düşen Usta vokal notaları:** %78'den **%94**'e çıkar.
+- **Vokalin gerçekten duyulduğu yere düşen Usta vokal notaları:** **%98** (nota başına duyulurluk denetimi olmadan %92). Şarkının vokal miksine göre bandın çok altında kalan nota, yani maskelenmiş arka vokal ya da ayırma sızıntısı, atılır.
 
 Şarkı söylenmeyen şarkılar artık synth'lerden oluşan bir vokal haritası almıyor. 31 tam şarkıda, eskiden Orta zorlukta 159–599 "vokal" notası alan enstrümantal parçalar artık 2–58 nota alıyor.
 
