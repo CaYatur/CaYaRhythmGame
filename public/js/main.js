@@ -485,9 +485,10 @@ function layoutLaneKeys() {
   }
 }
 
-// Yazi yiginini (isabet/kombo/kutlama) otoyolun SOL kenarinin disina hizala.
-// Kenar cizgisi iki derinlikten projekte edilip ekranin %30 yuksekligindeki
-// x'i bulunur. Yer yoksa (dar ekran) CSS varsayilani: otoyolun ustunde kucuk.
+// Yazi yiginini (isabet/kombo/kutlama) otoyolun SOL yanina, tek bir orta
+// eksende ortalanmis olarak yerlestir. Otoyol asagi indikce genisler: yiginin
+// alt ucundaki kenar esas alinir, boylece hicbir satir kenar cizgisine binmez.
+// Yer yoksa (dar ekran) CSS varsayilani: otoyolun ustunde kucuk.
 function layoutSideHud() {
   const el = $('hud-center');
   if (!el || !state.engine || !state.engine.scene) return;
@@ -495,14 +496,16 @@ function layoutSideHud() {
   if (near.length < 2 || far.length < 2) return;
   const edge = (a) => ({ x: a[0].x - (a[1].x - a[0].x) * 0.62, y: a[0].y });
   const e0 = edge(near), e1 = edge(far);
-  const y = window.innerHeight * 0.3;
-  const k = (y - e0.y) / (e1.y - e0.y);
-  const x = e0.x + k * (e1.x - e0.x) - 18;
-  // carpan halkasi (~130 px) ile cakismayacak kadar yer olmali
-  if (x > 300) {
-    el.classList.add('side');
-    el.style.left = x.toFixed(0) + 'px';
-    el.style.top = (y - 40).toFixed(0) + 'px';
+  const edgeAt = (y) => e0.x + (y - e0.y) / (e1.y - e0.y) * (e1.x - e0.x);
+  el.classList.add('side');
+  const top = window.innerHeight * 0.26, h = el.offsetHeight || 180;
+  const right = Math.min(edgeAt(top), edgeAt(top + h)) - 28;
+  const left = $('hud-mult-wrap').getBoundingClientRect().right + 16;
+  const half = 140; // en genis satirin (kutlama yazisi) yarisi
+  if (right - left > 2 * half) {
+    const cx = Math.max((left + right) / 2, right - half - 60);
+    el.style.left = cx.toFixed(0) + 'px';
+    el.style.top = top.toFixed(0) + 'px';
   } else {
     el.classList.remove('side');
     el.style.left = ''; el.style.top = '';
