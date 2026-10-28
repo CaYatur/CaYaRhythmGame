@@ -745,7 +745,7 @@ self.onmessage = (e) => {
       L = new Float32Array(msg.center.length); R = new Float32Array(msg.center.length);
       for (let i = 0; i < L.length; i++) { L[i] = msg.center[i] + msg.side[i]; R[i] = msg.center[i] - msg.side[i]; }
     }
-    const result = analyze(L, R, msg.sampleRate, msg.tune || {});
+    const result = analyze(L, R, msg.sampleRate, msg.tune || {}, msg.stems || null);
     self.postMessage({ type: 'result', ...result });
   } catch (err) {
     self.postMessage({ type: 'error', message: String(err && err.stack || err) });
@@ -753,7 +753,7 @@ self.onmessage = (e) => {
 };
 function progress(stage, pct) { self.postMessage({ type: 'progress', stage, pct }); }
 
-function analyze(left, right, sampleRate, tune) {
+function analyze(left, right, sampleRate, tune, stems) {
   if (Math.abs(sampleRate - SR) > 1) throw new Error('Beklenmeyen örnekleme hızı: ' + sampleRate);
   const len = left.length;
   const F = Math.max(1, Math.floor((len - FFT_N) / HOP) + 1);
@@ -1080,7 +1080,7 @@ function analyze(left, right, sampleRate, tune) {
   const vocFlux = new Float32Array(F);
   for (let i = 1; i < F; i++) { const d = vocEn[i] - vocEn[i - 1]; vocFlux[i] = d > 0 ? d : 0; }
   const vocFluxPeaks = new Set(pickPeaks(vocFlux, { minSep: 8, mul: 1.4, meanW: 14 }).filter(p => p.s >= 0.3).map(p => p.frame));
-  const vocal = segmentFromContour({
+  const vocalMix = stems && stems.vocals ? null : segmentFromContour({
     F, path: vocPath, salStr: vocStr, fluxPeaks: vocFluxPeaks,
     feats: { fineMidi: vocFine, formant: vocFormant, harm: vocHarm },
     energy: vocEn,
@@ -1093,6 +1093,15 @@ function analyze(left, right, sampleRate, tune) {
     presenceThr: tune.vocPres != null ? tune.vocPres : 0,
     tOffset: VOCAL_T_OFFSET
   });
+  // yapay zeka ayirmasi varsa vokal TEMIZ vokal kanalindan (eslik = digerleri)
+  let vocal = vocalMix;
+  const mixLevel = stems ? stemLevel(left, right) : 0;
+  if (!vocal && stemLevel(stems.vocals) <= mixLevel * Math.pow(10, -35 / 20)) vocal = []; // enstrumantal
+  if (!vocal) {
+    const n = stems.vocals.length, acc = new Float32Array(n);
+    for (const k of ['drums', 'bass', 'other']) { const a = stems[k]; if (a) for (let i = 0; i < Math.min(n, a.length); i++) acc[i] += a[i]; }
+    vocal = vocalFromStem(stems.vocals, acc, tune);
+  }
 
   progress('tempo', 96);
   const beatInfo = trackBeats(envBeat, F, tune);
@@ -1100,19 +1109,30 @@ function analyze(left, right, sampleRate, tune) {
   progress('structure', 98);
   const structure = analyzeStructure({ F, chroma, timbre, loud, beats: beatInfo.beats, duration });
 
+  // yapay zeka ayirmasi varsa davul/bas/enstruman kendi kanallarindan; miksin
+  // 40 dB altindaki kanal o sarkida yok sayilir (yalniz ayirma sizintisi)
+  let drumEv = null, bassEv = bass, instEv = inst;
+  if (stems) {
+    const has = (k) => stems[k] && stemLevel(stems[k]) > mixLevel * Math.pow(10, -40 / 20);
+    if (stems.drums) drumEv = has('drums') ? drumsFromStem(stems.drums) : { kick: [], snare: [], hat: [] };
+    if (stems.bass) bassEv = has('bass') ? bassFromStem(stems.bass) : [];
+    if (stems.other) instEv = has('other') ? instFromStem(stems.other) : [];
+  }
+
   progress('done', 100);
   return {
     events: {
-      kick: kicks.map(p => ({ t: p.t, s: p.s })),
-      snare: snares.map(p => ({ t: p.t, s: p.s })),
-      hat: hats.map(p => ({ t: p.t, s: p.s })),
-      bass, vocal, melody, inst
+      kick: drumEv ? drumEv.kick : kicks.map(p => ({ t: p.t, s: p.s })),
+      snare: drumEv ? drumEv.snare : snares.map(p => ({ t: p.t, s: p.s })),
+      hat: drumEv ? drumEv.hat : hats.map(p => ({ t: p.t, s: p.s })),
+      bass: bassEv, vocal, melody, inst: instEv
     },
     beats: beatInfo.beats,
     bpm: beatInfo.bpm,
     beatPeriod: beatInfo.beatPeriod,
     beatOffset: beatInfo.beatOffset,
     duration,
+    separated: !!(stems && stems.vocals),
     sections: structure.sections,
     energy: structure.energy, // 10 Hz, 0..1 yogunluk egrisi
     ...(DEBUG ? { debug: { snFlat, enKick, envBeat, hop: HOP_T, vocPath: Array.from(vocPath, k => k + MLO), vocRaw: Array.from(vocRawMidi), vocFine: Array.from(vocFine), melPath: Array.from(melPath, k => k + MLO), vocStr: Array.from(vocStr), melStr: Array.from(melStr), vocEn: Array.from(vocEn), vocHarm: Array.from(vocHarm), vocFormant: Array.from(vocFormant) } } : {})
@@ -1303,4 +1323,436 @@ function salAtPath(sal, path, F) {
   const out = new Float32Array(F);
   for (let f = 0; f < F; f++) out[f] = sal[f * NSTATE + path[f]];
   return out;
+}
+
+// ---------- ayrilmis vokal kanalindan vokal notalari ----------
+// Yapay zeka ayirmasi (separator-worker.js, HTDemucs) varsa vokal partisi miks
+// yerine TEMIZ vokal kanalindan cikarilir. Miks yolu (merkez maskesi + REPET +
+// salience) tek sesli temiz kanalda zayif kalir (MUSDB18 gercek vokal
+// kanalinda perde dogrulugu ~%47); burada tek sesli bir izleyici kullanilir:
+//   1. FFT tabanli YIN (de Cheveigne & Kawahara 2002): perde + aperiyodiklik
+//   2. sesli kare: aperiyodiklik < esik, kanal tepesine gore -30 dB ustu ve
+//      eslige (davul+bas+diger) gore -18 dB ustu: duyulmayan geri vokal ya da
+//      sizinti nota olmasin
+//   3. hece tepeleri: 150 Hz-5 kHz log spektral akis (SuperFlux benzeri)
+//   4. nota sinirlari: sesli bolge baslangici (onundeki unsuz hece tepesine
+//      dogru yari yola cekilir: unsuz vurustan once baslar, unlu vurusa oturur;
+//      sentetik sarkicida medyan sapma -28 ms -> -5 ms), kalici >=1 yarim ton
+//      perde degisimi, ayni perdede enerji cukurlu yeni hece; unluye
+//      baglanmayan guclu perdesiz hece (rap) ayri nota
+// Olcum (Demucs ile ayrilmis vokal, bagimsiz pYIN referansi, 18 gercek sarki):
+// perde dogrulugu %48 -> %72, hece kapsama %34 -> %61, Usta haritada notalarin
+// gercek heceye denk gelmesi %78 -> %89.
+const VS_W = 1024, VS_TMAX = 320, VS_N = 2048;
+
+function vocalFromStem(x, acc, tune) {
+  const o = Object.assign({
+    apThr: 0.3, dbFloor: -30, accDb: -18, yinThr: 0.15, fluxRel: 0.15, fluxLoc: 1.3, minSep: 7,
+    semiRun: 5, dipRatio: 0.85, sylMinGap: 6, consMerge: 10, consShift: 0.5, unvStrong: 0.35, minLen: 5
+  }, tune.vstem || {});
+  const F = Math.max(0, Math.floor((x.length - VS_W - VS_TMAX) / HOP) + 1);
+  if (F < 8) return [];
+  const fft = makeFFT(VS_N);
+  const f0 = new Float32Array(F), ap = new Float32Array(F), rms = new Float32Array(F), flux = new Float32Array(F), accRms = new Float32Array(F);
+  const cs = new Float64Array(x.length + 1);
+  for (let i = 0; i < x.length; i++) cs[i + 1] = cs[i] + x[i] * x[i];
+  const ar = new Float32Array(VS_N), ai = new Float32Array(VS_N), br = new Float32Array(VS_N), bi = new Float32Array(VS_N);
+  const hann = new Float32Array(VS_W);
+  for (let i = 0; i < VS_W; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / VS_W);
+  const b0 = Math.floor(150 * VS_N / SR), b1 = Math.ceil(5000 * VS_N / SR);
+  let prevLog = new Float32Array(b1 - b0), curLog = new Float32Array(b1 - b0);
+  const d = new Float64Array(VS_TMAX + 1), cm = new Float64Array(VS_TMAX + 1);
+  const tmin = Math.floor(SR / 1000);
+  for (let f = 0; f < F; f++) {
+    const off = f * HOP;
+    ar.fill(0); ai.fill(0); br.fill(0); bi.fill(0);
+    for (let j = 0; j < VS_W; j++) ar[j] = x[off + j];
+    for (let j = 0; j < VS_W + VS_TMAX; j++) br[j] = x[off + j];
+    fft(ar, ai); fft(br, bi);
+    // r(tau) = sum a_j b_{j+tau} = IFFT(conj(A) B); IFFT(X) = conj(FFT(conj(X))) / N
+    for (let k = 0; k < VS_N; k++) {
+      const re = ar[k] * br[k] + ai[k] * bi[k], im = ar[k] * bi[k] - ai[k] * br[k];
+      ar[k] = re; ai[k] = -im;
+    }
+    fft(ar, ai);
+    const e0 = cs[off + VS_W] - cs[off];
+    rms[f] = Math.sqrt(e0 / VS_W);
+    d[0] = 0;
+    for (let t = 1; t <= VS_TMAX; t++) d[t] = e0 + (cs[off + t + VS_W] - cs[off + t]) - 2 * ar[t] / VS_N;
+    cm[0] = 1;
+    let run = 0;
+    for (let t = 1; t <= VS_TMAX; t++) { run += d[t]; cm[t] = run > 0 ? d[t] * t / run : 1; }
+    let tau = -1;
+    for (let t = tmin; t < VS_TMAX; t++) if (cm[t] < o.yinThr) { while (t + 1 < VS_TMAX && cm[t + 1] < cm[t]) t++; tau = t; break; }
+    if (tau < 0) { let best = 1e9; for (let t = tmin; t < VS_TMAX; t++) if (cm[t] < best) { best = cm[t]; tau = t; } }
+    let dx = 0;
+    if (tau > 1 && tau < VS_TMAX) {
+      const a = cm[tau - 1], b = cm[tau], c = cm[tau + 1], den = a - 2 * b + c;
+      if (Math.abs(den) > 1e-12) dx = Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den));
+    }
+    f0[f] = SR / (tau + dx); ap[f] = cm[tau];
+    // hece akisi
+    ar.fill(0); ai.fill(0);
+    for (let j = 0; j < VS_W; j++) ar[j] = x[off + j] * hann[j];
+    fft(ar, ai);
+    let fl = 0;
+    for (let k = b0; k < b1; k++) {
+      const m = Math.log1p(Math.hypot(ar[k], ai[k]) * 25);
+      curLog[k - b0] = m;
+      const q = k - b0, pm = Math.max(prevLog[Math.max(0, q - 1)], prevLog[q], prevLog[Math.min(b1 - b0 - 1, q + 1)]);
+      if (m > pm) fl += m - pm;
+    }
+    flux[f] = fl;
+    const tmp = prevLog; prevLog = curLog; curLog = tmp;
+    if (acc) { let e = 0; for (let j = 0; j < VS_W; j++) { const v = acc[off + j] || 0; e += v * v; } accRms[f] = Math.sqrt(e / VS_W); }
+  }
+  const pctl = (arr, q) => { const s = Float32Array.from(arr).sort(); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
+  const peak = pctl(rms, 0.99) + 1e-9;
+  const gate = peak * Math.pow(10, o.dbFloor / 20), accK = Math.pow(10, o.accDb / 20);
+  const audible = (i) => rms[i] > gate && (!acc || rms[i] >= accRms[i] * accK);
+  const midi = new Float32Array(F);
+  for (let i = 0; i < F; i++) if (ap[i] < o.apThr && audible(i) && f0[i] > 70 && f0[i] < 1000) midi[i] = 69 + 12 * Math.log2(f0[i] / 440);
+  // kisa sessiz bosluklari doldur (<=2 kare), kisa sesli parcaciklari sil (<=3)
+  for (const [val, short] of [[false, 2], [true, 3]]) {
+    let r = 0;
+    for (let i = 0; i <= F; i++) {
+      if (i < F && (midi[i] > 0) === val) { r++; continue; }
+      if (r > 0 && r <= short) for (let k = i - r; k < i; k++) {
+        if (val) midi[k] = 0;
+        else { const a = midi[i - r - 1] || 0, b = midi[i] || 0; if (a > 0 && b > 0) midi[k] = (a + b) / 2; }
+      }
+      r = 0;
+    }
+  }
+  // oktav hatasi: yerel medyandan ~12 yarim ton uzak kareler katlanir
+  const med = new Float32Array(F), wbuf = [];
+  for (let i = 0; i < F; i++) {
+    if (!midi[i]) continue;
+    wbuf.length = 0;
+    for (let k = Math.max(0, i - 7); k <= Math.min(F - 1, i + 7); k++) if (midi[k]) wbuf.push(midi[k]);
+    wbuf.sort((a, b) => a - b); med[i] = wbuf[wbuf.length >> 1];
+  }
+  for (let i = 0; i < F; i++) if (midi[i]) { const dd = midi[i] - med[i]; if (Math.abs(Math.abs(dd) - 12) < 1.5) midi[i] -= Math.sign(dd) * 12; }
+  // hece tepeleri
+  const fp99 = pctl(flux, 0.99), fT = o.fluxRel * fp99;
+  const syl = new Uint8Array(F);
+  let last = -99;
+  for (let i = 1; i < F - 1; i++) {
+    const v = flux[i];
+    if (v < fT || v < flux[i - 1] || v < flux[i + 1] || i - last < o.minSep) continue;
+    let m = 0, c = 0;
+    for (let k = Math.max(0, i - 10); k <= Math.min(F - 1, i + 10); k++) { m += flux[k]; c++; }
+    if (v < o.fluxLoc * m / c) continue;
+    let aud = false;
+    for (let k = i; k < Math.min(F, i + 6); k++) if (rms[k] > gate * 1.8 && audible(k)) aud = true;
+    if (!aud) continue;
+    syl[i] = 1; last = i;
+  }
+  // notalar
+  const notes = [];
+  let cur = null, dev = 0, ref = 0;
+  const close = (end) => {
+    if (!cur) return;
+    const ps = [];
+    for (let k = cur.i; k < end; k++) if (midi[k]) ps.push(midi[k]);
+    ps.sort((a, b) => a - b);
+    const len = end - cur.i;
+    let en = 0;
+    for (let k = cur.i; k < Math.min(end, cur.i + 8); k++) en += rms[k];
+    cur.pitch = ps.length ? ps[ps.length >> 1] : 0;
+    cur.len = len * HOP_T; cur.en = en / Math.min(8, Math.max(1, len));
+    if (len >= o.minLen || (cur.syl && len >= 2)) notes.push(cur);
+    cur = null;
+  };
+  const voicedSoon = (i) => { for (let k = i + 1; k <= Math.min(F - 1, i + o.consMerge); k++) if (midi[k] > 0) return true; return false; };
+  for (let i = 0; i < F; i++) {
+    if (!(midi[i] > 0)) {
+      if (cur && !cur.unv) close(i);
+      if (cur && cur.unv && i - cur.i > 12) close(i);
+      // perdesiz hece: unluye baglaniyorsa o notanin baslangici olur (asagida);
+      // baglanmiyorsa yalniz guclu ise ayri nota (rap / fisilti)
+      if (syl[i] && !voicedSoon(i) && flux[i] >= o.unvStrong * fp99) { close(i); cur = { i, unv: true, syl: true }; }
+      continue;
+    }
+    if (!cur || cur.unv) {
+      close(i);
+      let st = i;
+      for (let k = i; k >= Math.max(0, i - o.consMerge); k--) { if (syl[k]) { st = k; break; } if (k < i && midi[k] > 0) break; }
+      if (notes.length && st <= notes[notes.length - 1].i) st = i;
+      cur = { i: Math.round(i - o.consShift * (i - st)), syl: st !== i || !!syl[i] }; ref = midi[i]; dev = 0;
+      continue;
+    }
+    if (Math.abs(midi[i] - ref) >= 1) {
+      if (++dev >= o.semiRun) { close(i - o.semiRun + 1); cur = { i: i - o.semiRun + 1 }; ref = midi[i]; dev = 0; }
+    } else { dev = 0; ref = ref * 0.9 + midi[i] * 0.1; }
+    // ayni perdede yeni hece: akis tepesi + oncesinde enerji cukuru
+    if (syl[i] && i - cur.i >= o.sylMinGap) {
+      let dip = Infinity, pre = 0, np = 0, post = 0;
+      for (let k = Math.max(0, i - 3); k <= i; k++) dip = Math.min(dip, rms[k]);
+      for (let k = Math.max(0, i - 10); k < i - 3; k++) { pre += rms[k]; np++; }
+      pre = np ? pre / np : rms[i];
+      for (let k = i + 1; k < Math.min(F, i + 6); k++) post = Math.max(post, rms[k]);
+      if (dip < o.dipRatio * Math.min(pre, post)) { close(i); cur = { i, syl: true }; ref = midi[i]; dev = 0; }
+    }
+  }
+  close(F);
+  // perdesiz notalara en yakin perdeli komsunun perdesi
+  for (let k = 0; k < notes.length; k++) if (!notes[k].pitch) {
+    let p = 0, bd = 1e9;
+    for (let j = Math.max(0, k - 4); j < Math.min(notes.length, k + 5); j++) if (notes[j].pitch && Math.abs(notes[j].i - notes[k].i) < bd) { bd = Math.abs(notes[j].i - notes[k].i); p = notes[j].pitch; }
+    notes[k].pitch = p || 60;
+  }
+  const ranks = percentileRanks(notes.map(n => n.en));
+  const cen = VS_W / 2 / SR;
+  return notes.map((n, k) => {
+    const ev = { t: Math.max(0, n.i * HOP_T + cen), s: Math.min(1, 0.25 + 0.75 * ranks[k]), pitch: Math.round(n.pitch * 10) / 10, dur: !n.unv && n.len >= 0.32 ? Math.min(n.len, 8) : 0 };
+    if (DEBUG) { ev.len = +n.len.toFixed(3); if (n.unv) ev.unv = true; }
+    return ev;
+  });
+}
+
+// ---------- ayrilmis davul / bas / enstruman kanallarindan olaylar ----------
+// Miks yolu (HPSS + bant akisi + kick sonum testi + stereo yan kanal) temiz
+// kanalda gereksizdir; her kanal kendi bandinda dogrudan okunur. MUSDB18 test
+// kesitlerinde (gercek kanallardan referans) F1: kick %46 -> %74, trampet+hat
+// %70 -> %83, bas %49 -> %66 (perde sinifi %68 -> %80), lead %63 -> %74.
+// Zaman kalibrasyonu: pencere ortasi damgasina eklenir. Akis tepesi ani
+// ataklarda pencere ortasindan once olusur; bilinen anlarda vurulan sentetik
+// kanallarla olculdu (tools/ disi gelistirme betigi), miks yolu ONSET_OFFSET ile
+// ayni ~0 ms hedefine getirir.
+const STEM_T_DRUMS = 0.006, STEM_T_BASS = 0.023, STEM_T_INST = 0.004;
+const STEM_FFT = {};
+const stemFFT = (n) => STEM_FFT[n] || (STEM_FFT[n] = makeFFT(n));
+function stemPctl(arr, q) {
+  const s = Float32Array.from(arr).sort();
+  return s[Math.min(s.length - 1, Math.floor(q * s.length))];
+}
+
+// bant log genlik spektrogrami (kare x kutu), log1p(50 * |X| / (N/2))
+function stemLogSpec(x, N, lo, hi, sr = SR, hop = HOP) {
+  const F = Math.max(0, Math.floor((x.length - N) / hop) + 1);
+  const b0 = Math.max(0, Math.floor(lo * N / sr)), b1 = Math.max(b0 + 1, Math.ceil(hi * N / sr));
+  const W = b1 - b0, m = new Float32Array(F * W);
+  const fft = stemFFT(N), re = new Float32Array(N), im = new Float32Array(N), win = new Float32Array(N);
+  for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / N);
+  for (let f = 0; f < F; f++) {
+    const o = f * hop;
+    for (let i = 0; i < N; i++) { re[i] = x[o + i] * win[i]; im[i] = 0; }
+    fft(re, im);
+    for (let k = b0; k < b1; k++) m[f * W + k - b0] = Math.log1p(Math.hypot(re[k], im[k]) * 100 / N);
+  }
+  return { F, W, m };
+}
+// kanal seviyesi: ~46 ms karelerin RMS'inin 99. yuzdeligi (b verilirse (a+b)/2)
+function stemLevel(a, b) {
+  const W = 1024, F = Math.floor(a.length / W), r = new Float32Array(Math.max(1, F));
+  for (let f = 0; f < F; f++) {
+    let e = 0;
+    for (let j = f * W; j < (f + 1) * W; j++) { const v = b ? 0.5 * (a[j] + b[j]) : a[j]; e += v * v; }
+    r[f] = Math.sqrt(e / W);
+  }
+  return stemPctl(r, 0.99);
+}
+
+// SuperFlux benzeri: frekansta 3'luk maks referansa gore pozitif fark
+function stemFlux(S) {
+  const { F, W, m } = S, d = new Float32Array(F);
+  for (let f = 1; f < F; f++) {
+    let s = 0;
+    const p = (f - 1) * W, c = f * W;
+    for (let k = 0; k < W; k++) {
+      const ref = Math.max(m[p + Math.max(0, k - 1)], m[p + k], m[p + Math.min(W - 1, k + 1)]);
+      const v = m[c + k] - ref;
+      if (v > 0) s += v;
+    }
+    d[f] = s;
+  }
+  return d;
+}
+// tepe secimi: p99'a goreli esik + yerel ortalamanin 1.3 kati + min aralik
+// (aralik icindeki daha guclu tepe oncekinin yerini alir)
+function stemPeaks(env, rel, minSep) {
+  const thr = rel * stemPctl(env, 0.99), out = [];
+  if (!(thr > 1e-6)) return out; // sessiz kanal
+  let last = -1e9;
+  for (let i = 1; i < env.length - 1; i++) {
+    const v = env[i];
+    if (v < thr || v < env[i - 1] || v < env[i + 1]) continue;
+    let m = 0, c = 0;
+    for (let k = Math.max(0, i - 10); k <= Math.min(env.length - 1, i + 10); k++) { m += env[k]; c++; }
+    if (v < 1.3 * m / c) continue;
+    if (i - last < minSep) {
+      if (out.length && v > env[out[out.length - 1]]) { out[out.length - 1] = i; last = i; }
+      continue;
+    }
+    out.push(i); last = i;
+  }
+  return out;
+}
+
+function drumsFromStem(x) {
+  const N = 1024, cen = N / 2 / SR + STEM_T_DRUMS;
+  const kE = stemFlux(stemLogSpec(x, N, 30, 120));
+  const sE = stemFlux(stemLogSpec(x, N, 200, 5000));
+  const hE = stemFlux(stemLogSpec(x, N, 7000, 11000));
+  const kick = stemPeaks(kE, 0.2, 8);
+  const s99 = stemPctl(sE, 0.99) + 1e-9, h99 = stemPctl(hE, 0.99) + 1e-9;
+  // trampet/clap 200 Hz-5 kHz'i doldurur; hi-hat 7 kHz ustunde baskindir
+  const ratio = (i) => {
+    let a = 0, b = 0;
+    for (let k = Math.max(0, i - 1); k <= i + 1; k++) { a = Math.max(a, sE[k] || 0); b = Math.max(b, hE[k] || 0); }
+    return (a / s99) / (b / h99 + 1e-3);
+  };
+  const ks = new Set(kick);
+  const near = (set, i, d) => { for (let k = i - d; k <= i + d; k++) if (set.has(k)) return true; return false; };
+  // kick'in ust harmonik tiki trampet sanilmasin
+  const snare = stemPeaks(sE, 0.2, 8).filter(i => ratio(i) > 0.9 && !(near(ks, i, 1) && ratio(i) < 1.6));
+  const ss = new Set(snare);
+  const hat = stemPeaks(hE, 0.2, 5).filter(i => !near(ss, i, 2));
+  // duyulmayan (kanal tepesinin 30 dB alti) sizinti vuruslari at
+  const F = kE.length, rms = new Float32Array(F), cs = new Float64Array(x.length + 1);
+  for (let i = 0; i < x.length; i++) cs[i + 1] = cs[i] + x[i] * x[i];
+  for (let f = 0; f < F; f++) rms[f] = Math.sqrt((cs[f * HOP + N] - cs[f * HOP]) / N);
+  const floor = stemPctl(rms, 0.99) * Math.pow(10, -30 / 20);
+  const loud = (i) => { for (let k = i; k < Math.min(F, i + 4); k++) if (rms[k] > floor) return true; return false; };
+  const mk = (arr0, env) => {
+    const arr = arr0.filter(loud);
+    const r = percentileRanks(arr.map(i => env[i]));
+    return arr.map((i, k) => ({ t: i * HOP_T + cen, s: Math.min(1, 0.2 + 0.8 * r[k]) }));
+  };
+  return { kick: mk(kick, kE), snare: mk(snare, sE), hat: mk(hat, hE) };
+}
+
+// FFT'li YIN: perde (Hz), aperiyodiklik, RMS - pencere W, en buyuk gecikme TMAX.
+// need(f) verilirse perde yalniz o karelerde hesaplanir (digerleri ap = 1).
+function stemYin(x, W, TMAX, fmax, thr, sr = SR, hop = HOP, need = null) {
+  const N = 1 << Math.ceil(Math.log2(W + TMAX));
+  const F = Math.max(0, Math.floor((x.length - W - TMAX) / hop) + 1);
+  const fft = stemFFT(N);
+  const ar = new Float32Array(N), ai = new Float32Array(N), br = new Float32Array(N), bi = new Float32Array(N);
+  const cs = new Float64Array(x.length + 1);
+  for (let i = 0; i < x.length; i++) cs[i + 1] = cs[i] + x[i] * x[i];
+  const f0 = new Float32Array(F), ap = new Float32Array(F), rms = new Float32Array(F);
+  const d = new Float64Array(TMAX + 1), cm = new Float64Array(TMAX + 1);
+  const tmin = Math.floor(sr / fmax);
+  for (let f = 0; f < F; f++) {
+    const off = f * hop;
+    rms[f] = Math.sqrt((cs[off + W] - cs[off]) / W);
+    ap[f] = 1;
+    if (need && !need(f)) continue;
+    ar.fill(0); ai.fill(0); br.fill(0); bi.fill(0);
+    for (let j = 0; j < W; j++) ar[j] = x[off + j];
+    for (let j = 0; j < W + TMAX; j++) br[j] = x[off + j];
+    fft(ar, ai); fft(br, bi);
+    for (let k = 0; k < N; k++) {
+      const re = ar[k] * br[k] + ai[k] * bi[k], im = ar[k] * bi[k] - ai[k] * br[k];
+      ar[k] = re; ai[k] = -im;
+    }
+    fft(ar, ai);
+    const e0 = cs[off + W] - cs[off];
+    for (let t = 1; t <= TMAX; t++) d[t] = e0 + (cs[off + t + W] - cs[off + t]) - 2 * ar[t] / N;
+    cm[0] = 1;
+    let run = 0;
+    for (let t = 1; t <= TMAX; t++) { run += d[t]; cm[t] = run > 0 ? d[t] * t / run : 1; }
+    let tau = -1;
+    for (let t = tmin; t < TMAX; t++) if (cm[t] < thr) { while (t + 1 < TMAX && cm[t + 1] < cm[t]) t++; tau = t; break; }
+    if (tau < 0) { let best = 1e9; for (let t = tmin; t < TMAX; t++) if (cm[t] < best) { best = cm[t]; tau = t; } }
+    let dx = 0;
+    if (tau > 1 && tau < TMAX) {
+      const a = cm[tau - 1], b = cm[tau], c = cm[tau + 1], den = a - 2 * b + c;
+      if (Math.abs(den) > 1e-12) dx = Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den));
+    }
+    f0[f] = sr / (tau + dx); ap[f] = cm[tau];
+  }
+  return { F, f0, ap, rms };
+}
+
+// 4:1 indirgeme (22050 -> 5512.5 Hz) - bas icin; 1 kHz alt geciren pencereli sinc
+const DEC4_TAPS = (() => {
+  const n = 47, h = new Float32Array(n), fc = 1000 / SR;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const m = i - (n - 1) / 2;
+    const sinc = m === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * m) / (Math.PI * m);
+    h[i] = sinc * (0.54 - 0.46 * Math.cos(2 * Math.PI * i / (n - 1))); sum += h[i];
+  }
+  for (let i = 0; i < n; i++) h[i] /= sum;
+  return h;
+})();
+function decimate4(x) {
+  const n = Math.floor(x.length / 4), y = new Float32Array(n), H = DEC4_TAPS, half = (H.length - 1) >> 1;
+  for (let i = 0; i < n; i++) {
+    const c = 4 * i;
+    let a = 0;
+    for (let k = 0; k < H.length; k++) { const j = c + k - half; if (j >= 0 && j < x.length) a += H[k] * x[j]; }
+    y[i] = a;
+  }
+  return y;
+}
+
+// bas: vurus = alt bant akis tepesi + sesli bolge baslangici + kalici (>=5 kare)
+// >=1 yarim ton perde degisimi; perde vurustan sonraki karelerin medyani
+function bassFromStem(x0) {
+  const x = decimate4(x0), sr = SR / 4, hop = HOP / 4;
+  const Y = stemYin(x, 512, 158, 400, 0.15, sr, hop);
+  const { F, f0, ap, rms } = Y;
+  const peak = stemPctl(rms, 0.99) + 1e-9, floor = peak * Math.pow(10, -30 / 20);
+  const midi = new Float32Array(F);
+  for (let i = 0; i < F; i++) if (ap[i] < 0.3 && rms[i] > floor && f0[i] > 35 && f0[i] < 400) midi[i] = 69 + 12 * Math.log2(f0[i] / 440);
+  const env = stemFlux(stemLogSpec(x, 512, 30, 400, sr, hop));
+  const on = new Set(stemPeaks(env, 0.15, 8));
+  let cur = 0, run = 0;
+  for (let i = 0; i < F; i++) {
+    if (midi[i] > 0 && (i === 0 || midi[i - 1] === 0)) { on.add(i); cur = midi[i]; run = 0; }
+    else if (midi[i] > 0) {
+      if (Math.abs(midi[i] - cur) >= 1) { if (++run >= 5) { on.add(i - 4); cur = midi[i]; run = 0; } }
+      else run = 0;
+    }
+  }
+  const merged = [];
+  for (const i of [...on].sort((a, b) => a - b)) if (!merged.length || i - merged[merged.length - 1] >= 6) merged.push(i);
+  const cen = 512 / 2 / sr + STEM_T_BASS, evs = [];
+  for (let k = 0; k < merged.length; k++) {
+    const i = merged[k], nx = k + 1 < merged.length ? merged[k + 1] : F;
+    const ps = [];
+    for (let j = i + 2; j < Math.min(nx, i + 10); j++) if (midi[j] > 0) ps.push(midi[j]);
+    ps.sort((a, b) => a - b);
+    let pk = 0, en = 0;
+    for (let j = i; j < Math.min(F, i + 4); j++) { pk = Math.max(pk, rms[j]); en += rms[j]; }
+    if (en / 4 <= floor) continue; // duyulmayan kuyruk/gurultu
+    let e = i + 1;
+    while (e < nx && rms[e] > pk * 0.5) e++;
+    evs.push({ t: i * HOP_T + cen, pitch: ps.length ? ps[ps.length >> 1] : 0, len: (e - i) * HOP_T, en });
+  }
+  for (let k = 0; k < evs.length; k++) if (!evs[k].pitch) { const nb = evs[k - 1] || evs[k + 1]; evs[k].pitch = nb && nb.pitch ? nb.pitch : 40; }
+  const r = percentileRanks(evs.map(e => e.en));
+  return evs.map((e, k) => ({ t: e.t, s: Math.min(1, 0.2 + 0.8 * r[k]), pitch: Math.round(e.pitch * 10) / 10, dur: e.len >= 0.45 ? Math.min(e.len, 6) : 0 }));
+}
+
+// enstruman (diger kanal): 120 Hz-8 kHz akis tepeleri; perde YIN (akorlarda
+// aperiyodik -> komsu notanin perdesi), sure enerji yariya inene kadar
+function instFromStem(x) {
+  const N = 1024, cen = N / 2 / SR + STEM_T_INST;
+  const env = stemFlux(stemLogSpec(x, N, 120, 8000));
+  const pk = stemPeaks(env, 0.15, 6);
+  const needF = new Uint8Array(env.length + 16);
+  for (const i of pk) for (let j = i + 2; j < i + 10; j++) needF[j] = 1;
+  const Y = stemYin(x, 1024, 280, 1500, 0.2, SR, HOP, (f) => needF[f] === 1);
+  const rms = Y.rms, floor = (stemPctl(rms, 0.99) + 1e-9) * Math.pow(10, -30 / 20);
+  const evs = [];
+  for (let k = 0; k < pk.length; k++) {
+    const i = pk[k], nx = Math.min(k + 1 < pk.length ? pk[k + 1] : Y.F, Y.F);
+    if (rms[Math.min(Y.F - 1, i + 2)] < floor) continue;
+    const ps = [];
+    for (let j = i + 2; j < Math.min(nx, i + 10); j++) if (Y.ap[j] < 0.35) ps.push(69 + 12 * Math.log2(Y.f0[j] / 440));
+    ps.sort((a, b) => a - b);
+    let p0 = 0;
+    for (let j = i; j < Math.min(Y.F, i + 4); j++) p0 = Math.max(p0, rms[j]);
+    let e = i + 1;
+    while (e < nx && rms[e] > p0 * 0.5) e++;
+    evs.push({ t: i * HOP_T + cen, pitch: ps.length ? ps[ps.length >> 1] : 0, len: (e - i) * HOP_T, v: env[i] });
+  }
+  for (let k = 0; k < evs.length; k++) if (!evs[k].pitch) { const nb = evs[k - 1] || evs[k + 1]; evs[k].pitch = nb && nb.pitch ? nb.pitch : 64; }
+  const r = percentileRanks(evs.map(e => e.v));
+  return evs.map((e, k) => ({ t: e.t, s: Math.min(1, 0.2 + 0.8 * r[k]), pitch: Math.round(e.pitch * 10) / 10, dur: e.len >= 0.45 ? Math.min(e.len, 6) : 0 }));
 }

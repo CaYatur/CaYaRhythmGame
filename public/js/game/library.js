@@ -5,7 +5,7 @@
 const DB_NAME = 'caya-library';
 const STORE = 'songs';
 // analiz motoru surumu: degisirse eski analizler yeniden hesaplanir
-export const ANALYSIS_VERSION = 6;
+export const ANALYSIS_VERSION = 7;
 
 let dbp = null;
 function db() {

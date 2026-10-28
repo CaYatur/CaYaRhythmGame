@@ -10,8 +10,12 @@
 //
 // Kullanim: node tools/stems-bench.mjs <refs_klasoru> <ses_klasoru> [<ses_klasoru> ...]
 //   BENCH_TUNE='{...}' worker'a ayar gecirir (ablasyon). --json sonucu JSON basar.
+//   STEMS=<klasor>: oyundaki yapay zeka ayirmasi gibi worker'a kanallar da
+//   verilir (<klasor>/<ad>.<vocals|drums|bass|other>.f32, 22050 Hz mono float32).
+//   Adil olcum icin referanslar, oyundaki ayiricidan BAGIMSIZ kanallardan
+//   (or. MUSDB18 test kesitlerinin gercek kanallari) uretilmelidir.
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -104,7 +108,17 @@ for (const f of readdirSync(refDir).filter(f => f.endsWith('.json')).sort()) {
   const audio = findAudio(ref.name);
   if (!audio) { console.log('ses bulunamadi:', ref.name); continue; }
   const { L, R } = decode(audio, ref.start, ref.dur);
-  self.onmessage({ data: { cmd: 'analyze', left: L, right: R, sampleRate: SR, debug: false, tune: TUNE } });
+  let stems = null;
+  if (process.env.STEMS) {
+    stems = {};
+    for (const k of ['vocals', 'drums', 'bass', 'other']) {
+      const p = path.join(process.env.STEMS, ref.name + '.' + k + '.f32');
+      if (!existsSync(p)) { stems = null; break; }
+      const b = readFileSync(p);
+      stems[k] = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
+    }
+  }
+  self.onmessage({ data: { cmd: 'analyze', left: L, right: R, sampleRate: SR, debug: false, tune: TUNE, stems } });
   const a = result, ev = a.events;
   const T = (arr) => (arr || []).map(e => e.t);
   const d = ref.drums;

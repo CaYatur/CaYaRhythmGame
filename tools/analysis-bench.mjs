@@ -6,6 +6,9 @@
 //      vibratolu lead, merkez pad) -> kesinlik / duyarlilik / yanlis alarm
 //   B) public/testsongs/*.mp3 gercek miksler + uzerine bindirilmis sarkici
 //      -> gercek eslik altinda duyarlilik ve perde dogrulugu
+//   C) A'nin yapay zeka ayirmali hali: worker'a kusursuz kanallar verilir
+//      (vokal = sarkici, diger = yatak + tuzaklar, davul/bas = sessiz) ->
+//      ayrilmis vokal izleyicisi + sessiz kanal korumasi
 //
 // Calistir:  node tools/analysis-bench.mjs [--quick] [--json out.json]
 // Gercek sarkilar icin ffmpeg gerekir (yoksa B atlanir).
@@ -31,11 +34,11 @@ function loadWorker() {
     postMessage(m) { if (m.type === 'result') result = m; else if (m.type === 'error') throw new Error(m.message); }
   };
   new Function('self', src)(self);
-  return (left, right) => {
+  return (left, right, stems = null) => {
     result = null;
     const center = new Float32Array(left.length), side = new Float32Array(left.length);
     for (let i = 0; i < left.length; i++) { center[i] = (left[i] + right[i]) * 0.5; side[i] = (left[i] - right[i]) * 0.5; }
-    self.onmessage({ data: { cmd: 'analyze', center, side, left: Float32Array.from(left), right: Float32Array.from(right), sampleRate: SR, tune: TUNE } });
+    self.onmessage({ data: { cmd: 'analyze', center, side, left: Float32Array.from(left), right: Float32Array.from(right), sampleRate: SR, tune: TUNE, stems } });
     return result;
   };
 }
@@ -72,7 +75,9 @@ function overlaySinger(L, R, notes, rng, ratio) {
   const vr = Math.sqrt(s / Math.max(1, c));
   const bed = Math.sqrt((rms(L) ** 2 + rms(R) ** 2) / 2);
   const g = ratio * bed / Math.max(1e-9, vr);
-  for (let i = 0; i < n; i++) { L[i] += tmpL[i] * g; R[i] += tmpR[i] * g; }
+  const voc = new Float32Array(n);
+  for (let i = 0; i < n; i++) { L[i] += tmpL[i] * g; R[i] += tmpR[i] * g; voc[i] = 0.5 * (tmpL[i] + tmpR[i]) * g; }
+  return voc; // kusursuz ayrilmis vokal kanali (C senaryosu)
 }
 
 // ---- metrikler ----
@@ -155,6 +160,32 @@ function runSynth(seed) {
   return { name: `synth#${seed}`, ...ev, ...{ chartNotes: fit.notes, chartOnVoice: fit.onVoice }, fpPerMin: fp, drum, sections: a.sections, msPerMin: ms / (DUR / 60), bpm: a.bpm };
 }
 
+// C) ayni sentetik sarki, kusursuz kanallarla (yapay zeka ayirmasi yolu)
+function runSynthStems(seed) {
+  const rng = makeRng(seed);
+  const DUR = 120;
+  const { L, R } = synthBed(DUR, rng);
+  const gt = [...makeMelody(rng, { start: 6, end: 36 }), ...makeMelody(rng, { start: 64, end: 94 })];
+  const decoyRegions = [
+    { kind: 'flatLead', start: 36, end: 50 },
+    { kind: 'vibLead', start: 50, end: 64 },
+    { kind: 'pad', start: 94, end: 108 }
+  ];
+  renderDecoys(L, R, decoyRegions, rng, 0.22);
+  const other = new Float32Array(L.length);
+  for (let i = 0; i < L.length; i++) other[i] = 0.5 * (L[i] + R[i]);
+  const vocals = overlaySinger(L, R, gt, rng, 0.7);
+  const silent = new Float32Array(L.length);
+  const a = analyze(L, R, { vocals, other, drums: silent, bass: Float32Array.from(silent) });
+  const ev = evaluate(a.events.vocal, gt);
+  const fp = {};
+  // bolge sonu 0.15 sn kirpilir: sonraki gercek notanin unsuz basi bir an once baslayabilir
+  for (const r of decoyRegions) fp[r.kind] = inRegion(a.events.vocal, { start: r.start, end: r.end - 0.15 }) / ((r.end - r.start) / 60);
+  fp.silence = inRegion(a.events.vocal, { start: 108, end: 120 }) / 0.2;
+  const silentEvents = a.events.kick.length + a.events.snare.length + a.events.hat.length + a.events.bass.length;
+  return { name: `stems#${seed}`, ...ev, fpPerMin: fp, silentEvents, chartNotes: 0, chartOnVoice: chartFit(a, gt).onVoice, msPerMin: 0 };
+}
+
 function runReal(file) {
   const name = path.basename(file, '.mp3');
   const DUR = 90;
@@ -175,6 +206,7 @@ function runReal(file) {
 console.log('CaYa Rhythm — analiz benchmark\n');
 const rows = [];
 for (const seed of QUICK ? [7] : [7, 21, 99]) rows.push(runSynth(seed));
+const stemRows = (QUICK ? [7] : [7, 21, 99]).map(runSynthStems);
 const songDir = path.join(ROOT, 'public/testsongs');
 if (!QUICK && existsSync(songDir) && hasFfmpeg()) {
   for (const f of readdirSync(songDir).filter(f => f.endsWith('.mp3')).sort()) rows.push(runReal(path.join(songDir, f)));
@@ -193,6 +225,10 @@ for (const r of rows) {
     pct(r.precision), pct(r.recall), pct(r.f1), pct(r.pitchAcc), pct(r.pitchOctAcc), pct(r.coverage), pct(r.chartOnVoice),
     String(Math.round(r.msPerMin)).padStart(6), String(r.outside).padStart(4), ' ', extra
   );
+}
+for (const r of stemRows) {
+  console.log(`  ${r.name} (kusursuz kanallar): vokal F1 ${pct(r.f1)}  perde ${pct(r.pitchAcc)}  ` +
+    `FP/dk flat=${r.fpPerMin.flatLead.toFixed(1)} vib=${r.fpPerMin.vibLead.toFixed(1)} pad=${r.fpPerMin.pad.toFixed(1)} sess=${r.fpPerMin.silence.toFixed(1)}  sessiz kanal olayi ${r.silentEvents}`);
 }
 for (const r of rows.filter(r => r.drum)) {
   console.log(`  ${r.name} davul: kick F1 ${pct(r.drum.kickF1)}  snare F1 ${pct(r.drum.snareF1)}  BPM hata ${r.drum.bpmErr.toFixed(1)}` +
@@ -224,6 +260,14 @@ if (QUICK) {
     ['snare F1 >= 0.33', r.drum.snareF1 >= 0.33],
     ['BPM hata <= 1', r.drum.bpmErr <= 1]
   ];
+  const st = stemRows[0];
+  const stFp = (st.fpPerMin.flatLead + st.fpPerMin.vibLead + st.fpPerMin.pad) / 3;
+  checks.push(
+    ['kanallarla vokal F1 >= 0.85', st.f1 >= 0.85],
+    ['kanallarla vokal perde >= 0.9', st.pitchAcc >= 0.9],
+    ['kanallarla tuzak FP/dk <= 1', stFp <= 1],
+    ['sessiz davul/bas kanalinda olay yok', st.silentEvents === 0]
+  );
   let bad = 0;
   for (const [name, ok] of checks) { console.log(`  ${ok ? '✓' : '✗'} ${name}`); if (!ok) bad++; }
   if (bad) { console.log(`
