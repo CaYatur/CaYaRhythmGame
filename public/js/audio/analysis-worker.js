@@ -745,7 +745,7 @@ self.onmessage = (e) => {
       L = new Float32Array(msg.center.length); R = new Float32Array(msg.center.length);
       for (let i = 0; i < L.length; i++) { L[i] = msg.center[i] + msg.side[i]; R[i] = msg.center[i] - msg.side[i]; }
     }
-    const result = analyze(L, R, msg.sampleRate, msg.tune || {});
+    const result = analyze(L, R, msg.sampleRate, msg.tune || {}, msg.stems || null);
     self.postMessage({ type: 'result', ...result });
   } catch (err) {
     self.postMessage({ type: 'error', message: String(err && err.stack || err) });
@@ -753,7 +753,7 @@ self.onmessage = (e) => {
 };
 function progress(stage, pct) { self.postMessage({ type: 'progress', stage, pct }); }
 
-function analyze(left, right, sampleRate, tune) {
+function analyze(left, right, sampleRate, tune, stems) {
   if (Math.abs(sampleRate - SR) > 1) throw new Error('Beklenmeyen örnekleme hızı: ' + sampleRate);
   const len = left.length;
   const F = Math.max(1, Math.floor((len - FFT_N) / HOP) + 1);
@@ -1080,7 +1080,7 @@ function analyze(left, right, sampleRate, tune) {
   const vocFlux = new Float32Array(F);
   for (let i = 1; i < F; i++) { const d = vocEn[i] - vocEn[i - 1]; vocFlux[i] = d > 0 ? d : 0; }
   const vocFluxPeaks = new Set(pickPeaks(vocFlux, { minSep: 8, mul: 1.4, meanW: 14 }).filter(p => p.s >= 0.3).map(p => p.frame));
-  const vocal = segmentFromContour({
+  const vocalMix = stems && stems.vocals ? null : segmentFromContour({
     F, path: vocPath, salStr: vocStr, fluxPeaks: vocFluxPeaks,
     feats: { fineMidi: vocFine, formant: vocFormant, harm: vocHarm },
     energy: vocEn,
@@ -1093,6 +1093,13 @@ function analyze(left, right, sampleRate, tune) {
     presenceThr: tune.vocPres != null ? tune.vocPres : 0,
     tOffset: VOCAL_T_OFFSET
   });
+  // yapay zeka ayirmasi varsa vokal TEMIZ vokal kanalindan (eslik = digerleri)
+  let vocal = vocalMix;
+  if (!vocal) {
+    const n = stems.vocals.length, acc = new Float32Array(n);
+    for (const k of ['drums', 'bass', 'other']) { const a = stems[k]; if (a) for (let i = 0; i < Math.min(n, a.length); i++) acc[i] += a[i]; }
+    vocal = vocalFromStem(stems.vocals, acc, tune);
+  }
 
   progress('tempo', 96);
   const beatInfo = trackBeats(envBeat, F, tune);
@@ -1113,6 +1120,7 @@ function analyze(left, right, sampleRate, tune) {
     beatPeriod: beatInfo.beatPeriod,
     beatOffset: beatInfo.beatOffset,
     duration,
+    separated: !!(stems && stems.vocals),
     sections: structure.sections,
     energy: structure.energy, // 10 Hz, 0..1 yogunluk egrisi
     ...(DEBUG ? { debug: { snFlat, enKick, envBeat, hop: HOP_T, vocPath: Array.from(vocPath, k => k + MLO), vocRaw: Array.from(vocRawMidi), vocFine: Array.from(vocFine), melPath: Array.from(melPath, k => k + MLO), vocStr: Array.from(vocStr), melStr: Array.from(melStr), vocEn: Array.from(vocEn), vocHarm: Array.from(vocHarm), vocFormant: Array.from(vocFormant) } } : {})
@@ -1303,4 +1311,187 @@ function salAtPath(sal, path, F) {
   const out = new Float32Array(F);
   for (let f = 0; f < F; f++) out[f] = sal[f * NSTATE + path[f]];
   return out;
+}
+
+// ---------- ayrilmis vokal kanalindan vokal notalari ----------
+// Yapay zeka ayirmasi (separator-worker.js, HTDemucs) varsa vokal partisi miks
+// yerine TEMIZ vokal kanalindan cikarilir. Miks yolu (merkez maskesi + REPET +
+// salience) tek sesli temiz kanalda zayif kalir (MUSDB18 gercek vokal
+// kanalinda perde dogrulugu ~%47); burada tek sesli bir izleyici kullanilir:
+//   1. FFT tabanli YIN (de Cheveigne & Kawahara 2002): perde + aperiyodiklik
+//   2. sesli kare: aperiyodiklik < esik, kanal tepesine gore -30 dB ustu ve
+//      eslige (davul+bas+diger) gore -18 dB ustu: duyulmayan geri vokal ya da
+//      sizinti nota olmasin
+//   3. hece tepeleri: 150 Hz-5 kHz log spektral akis (SuperFlux benzeri)
+//   4. nota sinirlari: sesli bolge baslangici (onundeki unsuz hece tepesine
+//      cekilir), kalici >=1 yarim ton perde degisimi, ayni perdede enerji
+//      cukurlu yeni hece; unluye baglanmayan guclu perdesiz hece (rap) ayri nota
+// Olcum (Demucs ile ayrilmis vokal, bagimsiz pYIN referansi, 18 gercek sarki):
+// perde dogrulugu %48 -> %78, hece kapsama %34 -> %68.
+const VS_W = 1024, VS_TMAX = 320, VS_N = 2048;
+
+function vocalFromStem(x, acc, tune) {
+  const o = Object.assign({
+    apThr: 0.3, dbFloor: -30, accDb: -18, yinThr: 0.15, fluxRel: 0.15, fluxLoc: 1.3, minSep: 7,
+    semiRun: 5, dipRatio: 0.95, sylMinGap: 6, consMerge: 10, unvStrong: 0.35, minLen: 5
+  }, tune.vstem || {});
+  const F = Math.max(0, Math.floor((x.length - VS_W - VS_TMAX) / HOP) + 1);
+  if (F < 8) return [];
+  const fft = makeFFT(VS_N);
+  const f0 = new Float32Array(F), ap = new Float32Array(F), rms = new Float32Array(F), flux = new Float32Array(F), accRms = new Float32Array(F);
+  const cs = new Float64Array(x.length + 1);
+  for (let i = 0; i < x.length; i++) cs[i + 1] = cs[i] + x[i] * x[i];
+  const ar = new Float32Array(VS_N), ai = new Float32Array(VS_N), br = new Float32Array(VS_N), bi = new Float32Array(VS_N);
+  const hann = new Float32Array(VS_W);
+  for (let i = 0; i < VS_W; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / VS_W);
+  const b0 = Math.floor(150 * VS_N / SR), b1 = Math.ceil(5000 * VS_N / SR);
+  let prevLog = new Float32Array(b1 - b0), curLog = new Float32Array(b1 - b0);
+  const d = new Float64Array(VS_TMAX + 1), cm = new Float64Array(VS_TMAX + 1);
+  const tmin = Math.floor(SR / 1000);
+  for (let f = 0; f < F; f++) {
+    const off = f * HOP;
+    ar.fill(0); ai.fill(0); br.fill(0); bi.fill(0);
+    for (let j = 0; j < VS_W; j++) ar[j] = x[off + j];
+    for (let j = 0; j < VS_W + VS_TMAX; j++) br[j] = x[off + j];
+    fft(ar, ai); fft(br, bi);
+    // r(tau) = sum a_j b_{j+tau} = IFFT(conj(A) B); IFFT(X) = conj(FFT(conj(X))) / N
+    for (let k = 0; k < VS_N; k++) {
+      const re = ar[k] * br[k] + ai[k] * bi[k], im = ar[k] * bi[k] - ai[k] * br[k];
+      ar[k] = re; ai[k] = -im;
+    }
+    fft(ar, ai);
+    const e0 = cs[off + VS_W] - cs[off];
+    rms[f] = Math.sqrt(e0 / VS_W);
+    d[0] = 0;
+    for (let t = 1; t <= VS_TMAX; t++) d[t] = e0 + (cs[off + t + VS_W] - cs[off + t]) - 2 * ar[t] / VS_N;
+    cm[0] = 1;
+    let run = 0;
+    for (let t = 1; t <= VS_TMAX; t++) { run += d[t]; cm[t] = run > 0 ? d[t] * t / run : 1; }
+    let tau = -1;
+    for (let t = tmin; t < VS_TMAX; t++) if (cm[t] < o.yinThr) { while (t + 1 < VS_TMAX && cm[t + 1] < cm[t]) t++; tau = t; break; }
+    if (tau < 0) { let best = 1e9; for (let t = tmin; t < VS_TMAX; t++) if (cm[t] < best) { best = cm[t]; tau = t; } }
+    let dx = 0;
+    if (tau > 1 && tau < VS_TMAX) {
+      const a = cm[tau - 1], b = cm[tau], c = cm[tau + 1], den = a - 2 * b + c;
+      if (Math.abs(den) > 1e-12) dx = Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den));
+    }
+    f0[f] = SR / (tau + dx); ap[f] = cm[tau];
+    // hece akisi
+    ar.fill(0); ai.fill(0);
+    for (let j = 0; j < VS_W; j++) ar[j] = x[off + j] * hann[j];
+    fft(ar, ai);
+    let fl = 0;
+    for (let k = b0; k < b1; k++) {
+      const m = Math.log1p(Math.hypot(ar[k], ai[k]) * 25);
+      curLog[k - b0] = m;
+      const q = k - b0, pm = Math.max(prevLog[Math.max(0, q - 1)], prevLog[q], prevLog[Math.min(b1 - b0 - 1, q + 1)]);
+      if (m > pm) fl += m - pm;
+    }
+    flux[f] = fl;
+    const tmp = prevLog; prevLog = curLog; curLog = tmp;
+    if (acc) { let e = 0; for (let j = 0; j < VS_W; j++) { const v = acc[off + j] || 0; e += v * v; } accRms[f] = Math.sqrt(e / VS_W); }
+  }
+  const pctl = (arr, q) => { const s = Float32Array.from(arr).sort(); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
+  const peak = pctl(rms, 0.99) + 1e-9;
+  const gate = peak * Math.pow(10, o.dbFloor / 20), accK = Math.pow(10, o.accDb / 20);
+  const audible = (i) => rms[i] > gate && (!acc || rms[i] >= accRms[i] * accK);
+  const midi = new Float32Array(F);
+  for (let i = 0; i < F; i++) if (ap[i] < o.apThr && audible(i) && f0[i] > 70 && f0[i] < 1000) midi[i] = 69 + 12 * Math.log2(f0[i] / 440);
+  // kisa sessiz bosluklari doldur (<=2 kare), kisa sesli parcaciklari sil (<=3)
+  for (const [val, short] of [[false, 2], [true, 3]]) {
+    let r = 0;
+    for (let i = 0; i <= F; i++) {
+      if (i < F && (midi[i] > 0) === val) { r++; continue; }
+      if (r > 0 && r <= short) for (let k = i - r; k < i; k++) {
+        if (val) midi[k] = 0;
+        else { const a = midi[i - r - 1] || 0, b = midi[i] || 0; if (a > 0 && b > 0) midi[k] = (a + b) / 2; }
+      }
+      r = 0;
+    }
+  }
+  // oktav hatasi: yerel medyandan ~12 yarim ton uzak kareler katlanir
+  const med = new Float32Array(F), wbuf = [];
+  for (let i = 0; i < F; i++) {
+    if (!midi[i]) continue;
+    wbuf.length = 0;
+    for (let k = Math.max(0, i - 7); k <= Math.min(F - 1, i + 7); k++) if (midi[k]) wbuf.push(midi[k]);
+    wbuf.sort((a, b) => a - b); med[i] = wbuf[wbuf.length >> 1];
+  }
+  for (let i = 0; i < F; i++) if (midi[i]) { const dd = midi[i] - med[i]; if (Math.abs(Math.abs(dd) - 12) < 1.5) midi[i] -= Math.sign(dd) * 12; }
+  // hece tepeleri
+  const fp99 = pctl(flux, 0.99), fT = o.fluxRel * fp99;
+  const syl = new Uint8Array(F);
+  let last = -99;
+  for (let i = 1; i < F - 1; i++) {
+    const v = flux[i];
+    if (v < fT || v < flux[i - 1] || v < flux[i + 1] || i - last < o.minSep) continue;
+    let m = 0, c = 0;
+    for (let k = Math.max(0, i - 10); k <= Math.min(F - 1, i + 10); k++) { m += flux[k]; c++; }
+    if (v < o.fluxLoc * m / c) continue;
+    let aud = false;
+    for (let k = i; k < Math.min(F, i + 6); k++) if (rms[k] > gate * 1.8 && audible(k)) aud = true;
+    if (!aud) continue;
+    syl[i] = 1; last = i;
+  }
+  // notalar
+  const notes = [];
+  let cur = null, dev = 0, ref = 0;
+  const close = (end) => {
+    if (!cur) return;
+    const ps = [];
+    for (let k = cur.i; k < end; k++) if (midi[k]) ps.push(midi[k]);
+    ps.sort((a, b) => a - b);
+    const len = end - cur.i;
+    let en = 0;
+    for (let k = cur.i; k < Math.min(end, cur.i + 8); k++) en += rms[k];
+    cur.pitch = ps.length ? ps[ps.length >> 1] : 0;
+    cur.len = len * HOP_T; cur.en = en / Math.min(8, Math.max(1, len));
+    if (len >= o.minLen || (cur.syl && len >= 2)) notes.push(cur);
+    cur = null;
+  };
+  const voicedSoon = (i) => { for (let k = i + 1; k <= Math.min(F - 1, i + o.consMerge); k++) if (midi[k] > 0) return true; return false; };
+  for (let i = 0; i < F; i++) {
+    if (!(midi[i] > 0)) {
+      if (cur && !cur.unv) close(i);
+      if (cur && cur.unv && i - cur.i > 12) close(i);
+      // perdesiz hece: unluye baglaniyorsa o notanin baslangici olur (asagida);
+      // baglanmiyorsa yalniz guclu ise ayri nota (rap / fisilti)
+      if (syl[i] && !voicedSoon(i) && flux[i] >= o.unvStrong * fp99) { close(i); cur = { i, unv: true, syl: true }; }
+      continue;
+    }
+    if (!cur || cur.unv) {
+      close(i);
+      let st = i;
+      for (let k = i; k >= Math.max(0, i - o.consMerge); k--) { if (syl[k]) { st = k; break; } if (k < i && midi[k] > 0) break; }
+      if (notes.length && st <= notes[notes.length - 1].i) st = i;
+      cur = { i: st, syl: st !== i || !!syl[i] }; ref = midi[i]; dev = 0;
+      continue;
+    }
+    if (Math.abs(midi[i] - ref) >= 1) {
+      if (++dev >= o.semiRun) { close(i - o.semiRun + 1); cur = { i: i - o.semiRun + 1 }; ref = midi[i]; dev = 0; }
+    } else { dev = 0; ref = ref * 0.9 + midi[i] * 0.1; }
+    // ayni perdede yeni hece: akis tepesi + oncesinde enerji cukuru
+    if (syl[i] && i - cur.i >= o.sylMinGap) {
+      let dip = Infinity, pre = 0, np = 0, post = 0;
+      for (let k = Math.max(0, i - 3); k <= i; k++) dip = Math.min(dip, rms[k]);
+      for (let k = Math.max(0, i - 10); k < i - 3; k++) { pre += rms[k]; np++; }
+      pre = np ? pre / np : rms[i];
+      for (let k = i + 1; k < Math.min(F, i + 6); k++) post = Math.max(post, rms[k]);
+      if (dip < o.dipRatio * Math.min(pre, post)) { close(i); cur = { i, syl: true }; ref = midi[i]; dev = 0; }
+    }
+  }
+  close(F);
+  // perdesiz notalara en yakin perdeli komsunun perdesi
+  for (let k = 0; k < notes.length; k++) if (!notes[k].pitch) {
+    let p = 0, bd = 1e9;
+    for (let j = Math.max(0, k - 4); j < Math.min(notes.length, k + 5); j++) if (notes[j].pitch && Math.abs(notes[j].i - notes[k].i) < bd) { bd = Math.abs(notes[j].i - notes[k].i); p = notes[j].pitch; }
+    notes[k].pitch = p || 60;
+  }
+  const ranks = percentileRanks(notes.map(n => n.en));
+  const cen = VS_W / 2 / SR;
+  return notes.map((n, k) => {
+    const ev = { t: Math.max(0, n.i * HOP_T + cen), s: Math.min(1, 0.25 + 0.75 * ranks[k]), pitch: Math.round(n.pitch * 10) / 10, dur: !n.unv && n.len >= 0.32 ? Math.min(n.len, 8) : 0 };
+    if (DEBUG) { ev.len = +n.len.toFixed(3); if (n.unv) ev.unv = true; }
+    return ev;
+  });
 }

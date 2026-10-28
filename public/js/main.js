@@ -27,6 +27,8 @@ function writeJSON(key, v) { try { localStorage.setItem(key, JSON.stringify(v));
 
 const settings = Object.assign(
   { noteSpeed: 1.0, latency: 0, volume: 80, rumble: 80, feedback: true, noFail: false, lefty: false,
+    // aiSep: yapay zeka ile kanal ayirma (WebGPU; analizden once)
+    aiSep: true,
     // nota turleri: false = kapali; offMode: kapali tur yerine 'replace' (uygun nota) | 'empty' (bos)
     noteTypes: {}, offMode: 'replace' },
   readJSON('caya-settings', {})
@@ -300,7 +302,7 @@ async function openFromLibrary(id) {
   const rec = await loadSong(id).catch(() => null);
   if (!rec) return;
   const data = await rec.file.arrayBuffer();
-  if (rec.version !== ANALYSIS_VERSION) { await handleFile(rec.name, data, { size: rec.size, type: rec.type, force: true }); return; }
+  if (rec.version !== ANALYSIS_VERSION || needsAiReanalysis(rec.analysis)) { await handleFile(rec.name, data, { size: rec.size, type: rec.type, force: true }); return; }
   try {
     state.audioBuffer = await decodeAudio(data, audioCtx());
     state.analysis = rec.analysis;
@@ -349,16 +351,28 @@ function bindSettings() {
   toggle('set-feedback', 'feedback', () => state.mixer && state.mixer.setFeedbackEnabled(settings.feedback));
   toggle('set-nofail', 'noFail');
   toggle('set-lefty', 'lefty', renderCards);
+  toggle('set-aisep', 'aiSep');
+  if (!navigator.gpu) {
+    const el = $('set-aisep');
+    el.disabled = true;
+    const small = el.closest('label').querySelector('small');
+    small.dataset.i18n = 'set.aisep.nogpu';
+    small.textContent = t('set.aisep.nogpu');
+  }
 }
 
 // ---------- dosya yukleme & analiz ----------
+const aiSepAvailable = () => !!settings.aiSep && !!navigator.gpu;
+// yapay zeka ayirmasi acik/mumkun ama sarki klasik analizle kaydedilmis ->
+// yeniden analiz (ayirma bir kez hatayla bittiyse tekrar deneme)
+const needsAiReanalysis = (a) => aiSepAvailable() && a && a.sepMode !== 'ai' && !a.sepError;
 async function handleFile(name, arrayBuffer, meta = {}) {
   const size = meta.size != null ? meta.size : arrayBuffer.byteLength;
   const id = songId(name, size);
   // daha once analiz edildiyse kutuphaneden ac (yeniden analiz yok)
   if (!meta.force) {
     const rec = await loadSong(id).catch(() => null);
-    if (rec && rec.version === ANALYSIS_VERSION) { await openFromLibrary(id); return; }
+    if (rec && rec.version === ANALYSIS_VERSION && !needsAiReanalysis(rec.analysis)) { await openFromLibrary(id); return; }
   }
 
   $('btn-start').disabled = true;
@@ -369,10 +383,11 @@ async function handleFile(name, arrayBuffer, meta = {}) {
   const keep = arrayBuffer.slice(0); // kutuphaneye kaydetmek icin kopya (decode tamponu tuketebilir)
 
   try {
-    const { audioBuffer, analysis } = await analyzeArrayBuffer(arrayBuffer, audioCtx(), (st, p) => {
-      stage.textContent = t('stage.' + st) + '…';
+    const { audioBuffer, analysis } = await analyzeArrayBuffer(arrayBuffer, audioCtx(), (st, p, eta) => {
+      stage.textContent = t('stage.' + st) + (eta > 1 ? ` · ~${Math.ceil(eta)} s` : '') + '…';
       fill.style.width = p + '%';
-    });
+    }, { separate: aiSepAvailable() });
+    if (analysis.sepError && analysis.sepError !== 'no-webgpu') toast(t('toast.sepFail', { msg: analysis.sepError }), 'warn');
     state.audioBuffer = audioBuffer;
     state.analysis = analysis;
     state.songName = name.replace(/\.[^.]+$/, '');
