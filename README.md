@@ -24,16 +24,17 @@ A browser rhythm game that turns any audio file into playable note charts for vo
 ## ✨ Features
 
 ### Gameplay
-- **Five instrument parts.** **Vocals**, **Lead**, **Bass** (lanes follow the bass pitch), **Drums** (kick / snare / cymbals) and **Full band**. Each card shows its note count and an intensity rating.
+- **Five instrument parts.** **Vocals**, **Lead** (the instruments: guitar, synth, keys), **Bass** (lanes follow the bass pitch), **Drums** (kick / snare / cymbals) and **Full band**. Each card shows its note count and an intensity rating.
 - **Four difficulties.** Easy, Medium, Hard (4 lanes) and Master (5 lanes). Note density follows the song: intense sections get busier, calm ones lighter.
 - **Note types.**
   - **Note** and **sustain** (hold).
-  - **Lift** (arrow): keep the lane held and release on the line. Generated from short sung or played notes.
+  - **Lift** (arrow): keep the lane held and release on the line, or press again on the line. Generated from short sung or played notes.
   - **Roll** (striped bar): tap rapidly for the whole bar. Generated from snare build-ups and fast repeats.
   - **Accent** (ringed): +50% points on Perfect or Great.
   - **Chords:** linked notes you press together.
 
-  The stage panel shows how many of each type the current chart has, with a how-to tooltip for each.
+  The stage panel shows how many of each type the current chart has, with a how-to tooltip for each. **Click a type to turn it off**, then choose whether a regular note takes its place (sustain → note, roll → spaced notes, chord → single note) or the spot stays empty.
+- **Charts you can learn.** Lane choices come from the music itself (melodic contour, position in the bar), so a repeated chorus plays the same way every time. Easy and Medium lean on the strong beats.
 - **Part feedback.** When you miss, *your* part drops out of the mix (vocal band, bass shelf or drum shelves), and it comes back as you hit again.
 - **Stage meter.** Hits fill it and misses drain it. Run it empty and you lose the stage (unless **No fail** is on). The crowd cheers or turns red with it.
 - **Stars.** Up to 5 stars plus gold stars, shown live in the HUD and on the results screen.
@@ -49,13 +50,15 @@ A browser rhythm game that turns any audio file into playable note charts for vo
 - **Sub-semitone pitch tracking** (harmonic salience, octave correction and Viterbi).
 - **Human-voice gate.** A **formant** trace, **micro-pitch** motion (vibrato/jitter) and **harmonicity** reject synth leads and pads that only resemble vocals.
 - **Drums.** SuperFlux onsets, with a kick **decay test** (rejects bass notes) and a snare **noisiness test** (rejects tonal plucks).
-- **Tempo & beat grid** (Ellis DP), **bass pitch**, **song structure** (self-similarity novelty, labeled A/B/C… with an intensity rating) and an energy curve.
+- **Instruments (Lead).** Onsets in the stereo-wide harmonic content, where guitars, synths and keys live while the vocal sits in the center.
+- **Bass pitch.** A dedicated low-rate harmonic-sum tracker (2.7 kHz, ~190 ms window) resolves the semitones that a normal spectrum can't separate below 100 Hz.
+- **Tempo & beat grid** (Ellis DP) with a **3:2 check**: syncopated songs no longer lock onto two-thirds of the real tempo. Plus **song structure** (self-similarity novelty, labeled A/B/C… with an intensity rating) and an energy curve.
 
 ### Presentation
 - **3D stage.** Truss arches with light strips, sweeping spotlights, a live-spectrum **LED wall**, pumping speaker stacks, and a crowd that bounces to the beat and reacts to your stage meter.
 - **Note highway.** Beveled gem notes, a scrolling highway, beat and measure lines, bloom and particles. Lighting follows section intensity and the song's energy curve.
-- **Keyboard & controller.** Full DualSense support over **WebHID** (reliable rumble, including Bluetooth), with a Gamepad-API fallback.
-- **Layered haptics.** Crisp taps on hits, distinct patterns for accents, lifts and rolls, a low hum while you hold a sustain, a beat-locked heartbeat during Boost, and an adjustable strength.
+- **Keyboard & controller.** Full DualSense support over **WebHID** (reliable rumble, including Bluetooth), with a Gamepad-API fallback. Button presses are read **as each controller report arrives** and timed with the report's own timestamp, so chords register together and a busy frame never delays a hit.
+- **Layered haptics.** Crisp taps on hits, distinct patterns for accents, lifts and rolls, a low hum while you hold a sustain, and an adjustable strength. **Boost rumbles continuously** (swelling on the beat) and every note you hit still punches through on top. Boost start and end each have their own pattern. Rumble reports never queue up, so they can't delay button input.
 - **Clear view.** Judgments and combo sit beside the highway, not on it. The receptors glow from the top edge when you're early and from the bottom edge when you're late.
 - **Bilingual UI.** English and Turkish, auto-detected and switchable on the fly.
 
@@ -118,15 +121,20 @@ npm start                   # serves on http://localhost:3000
 | False "vocals" on synth leads / pads | 23.8 / min | **2.9 / min** |
 | Kick / snare onset F1 | 61% / 28% | **71% / 41%** |
 
-On **real vocals** (8 hard songs: pop, rap, R&B, vocal EDM), scored against Demucs-separated reference vocals with `tools/realvocal-bench.mjs`:
+**Every part on real songs.** `tools/make-stem-refs.py` splits real songs into drums, bass, instruments and vocals with Demucs and extracts reference events from each clean stem. `tools/stems-bench.mjs` then scores the game's detection **and its charts** against them. There are 18 songs (pop, rap, R&B, EDM, phonk, rock): 8 were used for tuning, and 10 were held out and only used to check the result. The table shows tuning / held-out.
 
 | Metric | Before | Now |
 | --- | --- | --- |
-| Raw pitch accuracy (±1 semitone) | 35.1% | **40.9%** |
-| Overall accuracy (pitch + silence) | 52.5% | **56.5%** |
-| Voicing recall / false alarm | 58.7% / 28.7% | **61.3% / 26.6%** |
+| Tempo correct (half/double allowed) | 61% of songs | **100%** |
+| Bass pitch class at each bass note | 27% / 29% | **63% / 51%** |
+| Lead chart notes on a real instrument onset (Medium) | 81% / 80% | **90% / 84%** |
+| Instrument onsets covered by the Lead chart (Master) | 37% / 41% | **56% / 55%** |
+| Drum chart notes on a real drum hit (Medium) | 79% / 75% | **80% / 77%** |
+| Vocal chart notes on audible vocals (Medium) | 90% / 81% | **89% / 81%** |
 
-Demucs is used **only** as a measuring stick during development (`tools/make-vocal-refs.py`); the game itself stays ML-free and runs entirely in the browser.
+On **vocals**, scored with MIREX metrics against the Demucs vocal stem (`tools/realvocal-bench.mjs`): raw pitch accuracy is **54% / 52%** and overall accuracy is **67% / 63%**. Voicing recall is **69% / 68%**, with **18% / 28%** false alarms. (Earlier versions of this table reported lower numbers. The reference tool assumed a 10 ms hop when the real hop was 9.977 ms, which shifted the references by up to 0.2 s over 90 s. It is fixed, and every number above uses the corrected references.)
+
+Demucs is used **only** as a measuring stick during development; the game itself stays ML-free and runs entirely in the browser.
 
 ## 🏆 Scoring
 

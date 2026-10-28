@@ -391,7 +391,8 @@ function segmentFromContour(opt) {
     // + mutlak taban: goreli skor yalniz vokal on plani olan karelerde karar verir
     // (enstrumantal kopru/drop'larda "her bolumun ustu vokal" olmasin)
     const absFloor = (opt.absFloor != null ? opt.absFloor : 0.15) * p95(salStr);
-    for (let i = 0; i < F; i++) voiced[i] = opt.voiceScore[i] > opt.voiceThr && salStr[i] > absFloor ? 1 : 0;
+    const pres = opt.presence, pThr = opt.presenceThr || 0;
+    for (let i = 0; i < F; i++) voiced[i] = opt.voiceScore[i] > opt.voiceThr && salStr[i] > absFloor && (!pres || pres[i] > pThr) ? 1 : 0;
   } else {
     for (let i = 0; i < F; i++) voiced[i] = salStr[i] > strFloor ? 1 : 0;
   }
@@ -490,13 +491,42 @@ function segmentFromContour(opt) {
   const ranks = percentileRanks(kept.map(s => s.rawS));
   return kept.map((s, k) => {
     const o = { t: Math.max(0, s.t), s: ranks[k], pitch: s.pitch, dur: s.dur >= 0.32 ? Math.min(s.dur, 8) : 0 };
-    if (DEBUG) { if (s.feat) o.feat = s.feat; o.len = +s.dur.toFixed(3); }
+    if (DEBUG) { if (s.feat) o.feat = s.feat; o.len = +s.dur.toFixed(3); o.frame = s.frame; o.rawS = s.rawS; }
     return o;
   });
 }
 
 // ---------- tempo + DP vuruş izleme (Ellis 2007) ----------
-function trackBeats(envIn, F) {
+// 3:2 tempo yanilgisi: otokorelasyon + 120 BPM onseli, senkoplu ritimlerde
+// (noktali/uc'leme kick kaliplari) gercek tempo yerine 2/3'unu secebiliyor
+// (186 -> 123, 174 -> 117). Aday tempo izgarasinin GERCEK vuruslara oturmasi
+// yerel pencerelerde (tempo kaymasindan etkilenmesin) faz aramasiyla olculur:
+// vurus + 8'lik konumlarindaki ortalama vurus enerjisi / genel ortalama.
+function gridFit(env, F, lag) {
+  const W = Math.round(8 / HOP_T);
+  let sum = 0, n = 0, mean = 0;
+  for (let i = 0; i < F; i++) mean += env[i];
+  mean = mean / Math.max(1, F) + 1e-9;
+  const L = Math.max(1, Math.round(lag));
+  for (let w0 = 0; w0 + W <= F; w0 += W) {
+    let best = 0;
+    for (let ph = 0; ph < L; ph++) {
+      let b = 0, h = 0, nb = 0;
+      for (let x = w0 + ph; x < w0 + W; x += lag) {
+        const i = Math.round(x), j = Math.round(x + lag / 2);
+        b += Math.max(env[i - 1] || 0, env[i], env[i + 1] || 0);
+        if (j < F) h += Math.max(env[j - 1] || 0, env[j], env[j + 1] || 0);
+        nb++;
+      }
+      const v = (b + 0.5 * h) / Math.max(1, nb);
+      if (v > best) best = v;
+    }
+    sum += best; n++;
+  }
+  return n ? sum / n / mean : 0;
+}
+
+function trackBeats(envIn, F, tune = {}) {
   const norm = p95(envIn);
   const env = new Float32Array(F);
   for (let i = 1; i < F - 1; i++) env[i] = Math.min(4, (envIn[i - 1] * 0.25 + envIn[i] * 0.5 + envIn[i + 1] * 0.25) / norm);
@@ -518,6 +548,25 @@ function trackBeats(envIn, F) {
     const h3 = lag * 3 <= maxLag * 3 ? rs[lag * 3] : 0;
     const score = (rs[lag] + 0.5 * h2 + 0.33 * h3) * prior;
     if (score > bestScore) { bestScore = score; bestLag = lag; }
+  }
+  // 3:2 / 2:3 akrabalarindan izgaraya belirgin daha iyi oturani sec
+  if (tune.tempo32 !== false) {
+    // kesirli periyot sart: 8 sn'lik pencerede tam sayi yuvarlama (~0.3 kare/vurus)
+    // vurus basina birikir ve hizli tempolari haksizca cezalandirir
+    const fitNear = (c0) => {
+      let best = 0, bl = c0;
+      for (let k = -12; k <= 12; k++) { const c = c0 * (1 + k * 0.0025); const v = gridFit(env, F, c); if (v > best) { best = v; bl = c; } }
+      return [best, bl];
+    };
+    const [base] = fitNear(bestLag);
+    let pick = bestLag, pickFit = base * (tune.tempo32Margin || 1.08);
+    for (const r of [2 / 3, 3 / 2]) {
+      const c = bestLag * r;
+      if (c < minLag || c > maxLag) continue;
+      const [fit, cl] = fitNear(c);
+      if (fit > pickFit) { pick = Math.round(cl); pickFit = fit; }
+    }
+    bestLag = pick;
   }
   let tau = bestLag;
   if (bestLag > minLag && bestLag < maxLag) {
@@ -558,6 +607,81 @@ function trackBeats(envIn, F) {
     if (medIv > 0.2) bpm = 60 / medIv;
   }
   return { beats, bpm: Math.round(bpm * 10) / 10, beatPeriod: 60 / bpm, beatOffset: beats.length ? beats[0] : 0 };
+}
+
+// ---------- bas perdesi: dusuk ornekleme oranli harmonik toplam (SHS) ----------
+// 1024 noktali ana STFT'de bin araligi 21.5 Hz; 40-80 Hz'de yarim ton yalniz
+// 2-5 Hz oldugundan bas perdesi tepe-bin'den kaba ve cogu kez 2. harmonikten
+// geliyordu. Burada mono sinyal 1.1 kHz'de alcak geciren suzgecle 8'e
+// indirgenir (2756 Hz), ~140 ms pencere sifir dolgulu 1024 FFT ile cozulur ve
+// her aday f0 (E1..C4, 1/3 yarim ton) icin ilk 6 harmonigin genlik toplami
+// alinir (Hermes 1988). Gercek bas kanaliyla (Demucs) olculerek ayarlandi.
+function bassPitchTrack(left, right, F, tune) {
+  const D = 8, SRd = SR / D, N = 1024;
+  const W = tune.bassWin || 512;
+  const n = left.length;
+  // 4. derece Butterworth (2 biquad), fc = 1100 Hz
+  const x = new Float32Array(n);
+  for (let i = 0; i < n; i++) x[i] = 0.5 * (left[i] + right[i]);
+  const biquad = (q) => {
+    const w0 = 2 * Math.PI * 1100 / SR, al = Math.sin(w0) / (2 * q), cw = Math.cos(w0);
+    const a0 = 1 + al;
+    const b0 = (1 - cw) / 2 / a0, b1 = (1 - cw) / a0, b2 = b0, a1 = -2 * cw / a0, a2 = (1 - al) / a0;
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < n; i++) {
+      const v = x[i], y = b0 * v + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = v; y2 = y1; y1 = y; x[i] = y;
+    }
+  };
+  biquad(0.5412); biquad(1.3066);
+  const nd = Math.floor(n / D), xd = new Float32Array(nd);
+  for (let i = 0; i < nd; i++) xd[i] = x[i * D];
+
+  const fft = makeFFT(N);
+  const win = new Float32Array(W);
+  for (let i = 0; i < W; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (W - 1));
+  const re = new Float32Array(N), im = new Float32Array(N), mag = new Float32Array(N / 2);
+  const binHz = SRd / N;
+  // adaylar: MIDI 28 (E1) .. 60 (C4), 1/3 yarim ton
+  const C = [];
+  for (let m = 28; m <= 60; m += 1 / 3) C.push(m);
+  const f0s = C.map(m => 440 * Math.pow(2, (m - 69) / 12));
+  const HW = [1, 0.85, 0.7, 0.6, 0.5, 0.42];
+  const at = (f) => { // dogrusal aradegerli genlik
+    const b = f / binHz, i = Math.floor(b), fr = b - i;
+    return i + 1 < mag.length ? mag[i] * (1 - fr) + mag[i + 1] * fr : 0;
+  };
+  const out = new Float32Array(F), conf = new Float32Array(F);
+  const sc = new Float32Array(C.length);
+  for (let c = 0; c < F; c++) {
+    const center = (c * HOP + FFT_N / 2) / D;
+    const st = Math.round(center - W / 2);
+    re.fill(0); im.fill(0);
+    let e = 0;
+    for (let i = 0; i < W; i++) { const j = st + i; const v = j >= 0 && j < nd ? xd[j] * win[i] : 0; re[i] = v; e += v * v; }
+    if (e < 1e-9) continue;
+    fft(re, im);
+    for (let b = 0; b < N / 2; b++) mag[b] = Math.sqrt(Math.sqrt(re[b] * re[b] + im[b] * im[b])); // sikistirilmis genlik
+    let best = 0, bk = 0, tot = 0;
+    for (let k = 0; k < C.length; k++) {
+      let v = 0;
+      for (let h = 0; h < HW.length; h++) { const f = f0s[k] * (h + 1); if (f > 1250) break; v += HW[h] * at(f); }
+      sc[k] = v; tot += v;
+      if (v > best) { best = v; bk = k; }
+    }
+    // alt-oktav kontrolu: f0/2 adayi neredeyse ayni gucteyse (tek harmonikleri
+    // olan bas) gercek temel odur
+    const ko = bk - 36;
+    if (ko >= 0 && sc[ko] > best * (tune.bassSubOct || 0.92)) bk = ko;
+    let m = C[bk];
+    if (bk > 0 && bk < C.length - 1) {
+      const a = sc[bk - 1], b = sc[bk], r = sc[bk + 1], den = a - 2 * b + r;
+      if (Math.abs(den) > 1e-12) m += Math.max(-0.5, Math.min(0.5, 0.5 * (a - r) / den)) / 3;
+    }
+    out[c] = m;
+    conf[c] = best / (tot / C.length + 1e-9);
+  }
+  return { midi: out, conf };
 }
 
 // ---------- REPET: segment içi tekrar eden arka planı çıkar ----------
@@ -655,6 +779,11 @@ function analyze(left, right, sampleRate, tune) {
   // yapi analizi: kare basina kroma (12) + 6 bant tini + yukseklik
   const chroma = new Float32Array(F * 12), timbre = new Float32Array(F * 6), loud = new Float32Array(F);
   const snFlat = new Float32Array(F);   // perkusif 1-8 kHz spektral duzlugu (gurultuluk)
+  // enstruman (vokal disi) harmonik akis: yanlara yayilmis/ters fazli harmonik
+  // icerik (gitar, synth, piyano genelde stereo genistir; vokal merkezdedir)
+  const fxInst = new Float32Array(F), enInst = new Float32Array(F), instMidi = new Float32Array(F);
+  const instRow = new Float32Array(BINS), lInst = new Float32Array(BINS), prevInstMax = new Float32Array(BINS);
+  const INST_LO = hzBin(180), INST_HI = hzBin(5000);
 
   // melodi (akan, REPET'siz): salience matrisi + güç + ham perde
   const cand = buildCandidates();
@@ -775,6 +904,25 @@ function analyze(left, right, sampleRate, tune) {
       spRow[b] = magC[b] * (1 - hm); // perkusif
     }
 
+    // enstruman akisi: harmonik merkezin yan-panli payi + harmonik yan kanal
+    {
+      let e = 0;
+      for (let b = 0; b < BINS; b++) {
+        const h2 = harmRow[b] * harmRow[b], p2 = percRow[b] * percRow[b];
+        const hm = h2 / (h2 + p2 + 1e-9), sm = simC[b];
+        instRow[b] = shRow[b] * (1 - sm * sm * sm) + magS[b] * hm;
+        lInst[b] = log1p20(instRow[b]);
+        if (b >= INST_LO && b < INST_HI) e += instRow[b];
+      }
+      fxInst[c] = bandSuperFlux(lInst, prevInstMax, INST_LO, INST_HI);
+      maxFilt(lInst, tmpMax); prevInstMax.set(tmpMax);
+      enInst[c] = e;
+      salienceRow(instRow, cand, tmpSal);
+      let bk = 0, bv = 0;
+      for (let k = 0; k < NSTATE; k++) { const sv = tmpSal[k] * MEL_PW[k]; if (sv > bv) { bv = sv; bk = k; } }
+      instMidi[c] = bv > 0 ? MLO + bk : 0;
+    }
+
     // perkusyon SuperFlux
     for (let b = 0; b < BINS; b++) lsp[b] = log1p20(spRow[b]);
     fxKick[c] = bandSuperFlux(lsp, prevLspMax, BAND.kick[0], BAND.kick[1]);
@@ -862,6 +1010,7 @@ function analyze(left, right, sampleRate, tune) {
   });
   const hats = pickPeaks(fxHat, { minSep: 5, mul: 1.45 });
   const bassRaw = pickPeaks(fxBass, { minSep: 14, mul: 1.4, meanW: 16 });
+  const bassTrack = tune.bassShs === false ? null : bassPitchTrack(left, right, F, tune);
   const bass = bassRaw.map((p, idx) => {
     let e0 = 0, c0 = 0;
     for (let g = p.frame + 1; g < Math.min(F, p.frame + 5); g++) { e0 += enBass[g]; c0++; }
@@ -870,12 +1019,34 @@ function analyze(left, right, sampleRate, tune) {
     const nextOnset = idx + 1 < bassRaw.length ? bassRaw[idx + 1].frame : F;
     while (g < F && g < nextOnset - 2 && enBass[g] > 0.35 * e0) g++;
     const dur = (g - p.frame) * HOP_T;
-    // perde: atak sonrasi 2-6. karelerin medyani (atak gecis gurultusunden kac)
+    // perde: atak sonrasi karelerin medyani (atak gecis gurultusunden kac);
+    // SHS penceresi ~140 ms oldugundan bir onceki notadan tasmamak icin biraz
+    // daha geriden ve notanin icinde kalarak
     const ps = [];
-    for (let k = p.frame + 2; k < Math.min(F, p.frame + 7); k++) ps.push(bassMidi[k]);
+    if (bassTrack) {
+      const k0 = p.frame + (tune.bassK0 != null ? tune.bassK0 : 5);
+      const k1 = Math.min(F, nextOnset - 2, p.frame + (tune.bassK1 != null ? tune.bassK1 : 12));
+      for (let k = k0; k < Math.max(k0 + 1, k1); k++) if (k < F) ps.push(bassTrack.midi[k]);
+    } else for (let k = p.frame + 2; k < Math.min(F, p.frame + 7); k++) ps.push(bassMidi[k]);
     ps.sort((x, y) => x - y);
     const pitch = ps.length ? Math.round(ps[ps.length >> 1]) : 0;
     return { t: p.t, s: p.s, dur: dur >= 0.45 ? dur : 0, pitch };
+  });
+
+  // enstruman (lead) olaylari: yan/genis harmonik akistaki ataklar
+  const instRaw = pickPeaks(fxInst, { minSep: tune.instSep || 9, mul: tune.instMul || 1.5, meanW: 14 });
+  const inst = instRaw.map((p, idx) => {
+    const nextOnset = idx + 1 < instRaw.length ? instRaw[idx + 1].frame : F;
+    let e0 = 0, c0 = 0;
+    for (let g = p.frame + 1; g < Math.min(F, p.frame + 5); g++) { e0 += enInst[g]; c0++; }
+    e0 /= Math.max(1, c0);
+    let g = p.frame + 4;
+    while (g < F && g < nextOnset - 2 && enInst[g] > 0.5 * e0) g++;
+    const dur = (g - p.frame) * HOP_T;
+    const ps = [];
+    for (let k = p.frame + 2; k < Math.min(F, p.frame + 8, nextOnset); k++) if (instMidi[k] > 0) ps.push(instMidi[k]);
+    ps.sort((x, y) => x - y);
+    return { t: p.t, s: p.s, dur: dur >= 0.45 ? Math.min(dur, 6) : 0, pitch: ps.length ? ps[ps.length >> 1] : 0 };
   });
 
   progress('melody', 82);
@@ -915,11 +1086,13 @@ function analyze(left, right, sampleRate, tune) {
     voiceScore: tune.vocVoicing === false ? null : voicingScore(melStr, vocStr, vocHarm, F),
     voiceThr: tune.vocVoice != null ? tune.vocVoice : 0.4, // gercek vokal benchmark'iyla secildi
     absFloor: tune.vocAbs,
+    presence: vocalPresence(vocHarm, F, tune.vocPresW || 2),
+    presenceThr: tune.vocPres != null ? tune.vocPres : 0,
     tOffset: VOCAL_T_OFFSET
   });
 
   progress('tempo', 96);
-  const beatInfo = trackBeats(envBeat, F);
+  const beatInfo = trackBeats(envBeat, F, tune);
 
   progress('structure', 98);
   const structure = analyzeStructure({ F, chroma, timbre, loud, beats: beatInfo.beats, duration });
@@ -930,7 +1103,7 @@ function analyze(left, right, sampleRate, tune) {
       kick: kicks.map(p => ({ t: p.t, s: p.s })),
       snare: snares.map(p => ({ t: p.t, s: p.s })),
       hat: hats.map(p => ({ t: p.t, s: p.s })),
-      bass, vocal, melody
+      bass, vocal, melody, inst
     },
     beats: beatInfo.beats,
     bpm: beatInfo.bpm,
@@ -939,7 +1112,7 @@ function analyze(left, right, sampleRate, tune) {
     duration,
     sections: structure.sections,
     energy: structure.energy, // 10 Hz, 0..1 yogunluk egrisi
-    ...(DEBUG ? { debug: { snFlat, enKick, hop: HOP_T, vocPath: Array.from(vocPath, k => k + MLO), vocRaw: Array.from(vocRawMidi), vocFine: Array.from(vocFine), melPath: Array.from(melPath, k => k + MLO), vocStr: Array.from(vocStr), melStr: Array.from(melStr), vocEn: Array.from(vocEn), vocHarm: Array.from(vocHarm), vocFormant: Array.from(vocFormant) } } : {})
+    ...(DEBUG ? { debug: { snFlat, enKick, envBeat, hop: HOP_T, vocPath: Array.from(vocPath, k => k + MLO), vocRaw: Array.from(vocRawMidi), vocFine: Array.from(vocFine), melPath: Array.from(melPath, k => k + MLO), vocStr: Array.from(vocStr), melStr: Array.from(melStr), vocEn: Array.from(vocEn), vocHarm: Array.from(vocHarm), vocFormant: Array.from(vocFormant) } } : {})
   };
 }
 
@@ -1099,6 +1272,18 @@ function voicingScore(melStr, vocStr, vocHarm, F) {
   const m = rank(smooth(melStr)), v = rank(smooth(vocStr)), h = rank(smooth(vocHarm));
   const out = new Float32Array(F);
   for (let i = 0; i < F; i++) out[i] = (2 * m[i] + v[i] + h[i]) / 4;
+  return out;
+}
+
+// Sarkilar ARASI karsilastirilabilir vokal varligi: ~2 sn pencerede ortalama
+// harmoniklik. Goreli voicing skoru her sarkida karelerin bir kismini "vokal"
+// sayar; vokalsiz (enstrumantal/drop) bolumlerde bu mutlak olcu duser.
+function vocalPresence(harm, F, sec) {
+  const W = Math.max(1, Math.round(sec / HOP_T / 2));
+  const cs = new Float64Array(F + 1);
+  for (let i = 0; i < F; i++) cs[i + 1] = cs[i] + harm[i];
+  const out = new Float32Array(F);
+  for (let i = 0; i < F; i++) { const a = Math.max(0, i - W), b = Math.min(F, i + W + 1); out[i] = (cs[b] - cs[a]) / (b - a); }
   return out;
 }
 

@@ -24,16 +24,17 @@ Herhangi bir ses dosyasını vokal, lead, bas, davul ya da tam grup için çalı
 ## ✨ Özellikler
 
 ### Oynanış
-- **Beş enstrüman parçası.** **Vokal**, **Lead**, **Bas** (şeritler bas perdesini izler), **Davul** (kick / trampet / zil) ve **Tam grup**. Her kartta nota sayısı ve yoğunluk göstergesi bulunur.
+- **Beş enstrüman parçası.** **Vokal**, **Lead** (enstrümanlar: gitar, synth, piyano), **Bas** (şeritler bas perdesini izler), **Davul** (kick / trampet / zil) ve **Tam grup**. Her kartta nota sayısı ve yoğunluk göstergesi bulunur.
 - **Dört zorluk.** Kolay, Orta, Zor (4 şerit) ve Usta (5 şerit). Nota yoğunluğu şarkıyı izler: yoğun bölümler daha dolu, sakin bölümler daha hafiftir.
 - **Nota türleri.**
   - **Nota** ve **uzun nota** (basılı tut).
-  - **Bırak** (ok): şeridi basılı tut ve ok çizgiye gelince bırak. Kısa süren söylenen ya da çalınan notalardan üretilir.
+  - **Bırak** (ok): şeridi basılı tut ve ok çizgiye gelince bırak ya da çizgide yeniden bas. Kısa süren söylenen ya da çalınan notalardan üretilir.
   - **Rulo** (çizgili bar): bar boyunca hızlı hızlı bas. Trampet build-up'larından ve hızlı tekrarlardan üretilir.
   - **Vurgu** (halkalı): Kusursuz veya Harika'da +%50 puan.
   - **Akor:** birbirine bağlı, aynı anda basılan notalar.
 
-  Sahne panelinde mevcut haritada her türden kaç tane olduğu ve nasıl çalınacağını anlatan ipuçları görünür.
+  Sahne panelinde mevcut haritada her türden kaç tane olduğu ve nasıl çalınacağını anlatan ipuçları görünür. **Bir türe tıklayıp kapatabilirsin**; ardından yerine normal nota mı konacağını (uzun → kısa, rulo → aralıklı notalar, akor → tek nota) yoksa yerin boş mu kalacağını seçersin.
+- **Ezberlenebilir haritalar.** Şerit seçimleri müziğin kendisinden (melodi konturu, ölçüdeki konum) gelir; tekrar eden nakarat her seferinde aynı çalınır. Kolay ve Orta güçlü vuruşlara oturur.
 - **Parça geri bildirimi.** Kaçırdığında *senin* parçan miksten kısılır (vokal bandı, bas rafı ya da davul rafları); isabetlerle geri gelir.
 - **Sahne metresi.** İsabetle dolar, kaçırmayla boşalır. Biterse sahneyi kaybedersin (**Kaybetme yok** açık değilse). Seyirci de buna göre coşar ya da kırmızıya döner.
 - **Yıldızlar.** 5 yıldız ve altın yıldızlar; HUD'da canlı, sonuç ekranında özet olarak.
@@ -49,13 +50,15 @@ Herhangi bir ses dosyasını vokal, lead, bas, davul ya da tam grup için çalı
 - **Yarım-ton altı perde takibi** (harmonik belirginlik, oktav düzeltmesi ve Viterbi).
 - **İnsan sesi kapısı.** **Formant** izi, **mikro perde** hareketi (vibrato/jitter) ve **harmoniklik**, yalnızca vokale benzeyen synth lead ve pad'leri eler.
 - **Davul.** SuperFlux vuruş tespiti; kick için **sönüm testi** (bas notalarını eler), trampet için **gürültülük testi** (tonal pluck'ları eler).
-- **Tempo ve vuruş ızgarası** (Ellis DP), **bas perdesi**, **şarkı yapısı** (öz-benzerlik yeniliği, A/B/C… harfleri ve yoğunluk) ve enerji eğrisi.
+- **Enstrümanlar (Lead).** Stereo genişlikteki harmonik içerikte vuruş tespiti; vokal ortadayken gitar, synth ve piyano genelde yanlara yayılır.
+- **Bas perdesi.** Ayrı bir düşük örnekleme oranlı harmonik toplam takibi (2.7 kHz, ~190 ms pencere), normal spektrumun 100 Hz altında ayıramadığı yarım tonları çözer.
+- **Tempo ve vuruş ızgarası** (Ellis DP) ve **3:2 denetimi**: senkoplu şarkılar artık gerçek tempo yerine onun 2/3'üne kilitlenmez. Ayrıca **şarkı yapısı** (öz-benzerlik yeniliği, A/B/C… harfleri ve yoğunluk) ve enerji eğrisi.
 
 ### Görsel sunum
 - **3D sahne.** Işık şeritli truss kemerleri, dönen spot ışıkları, canlı spektrumlu **LED duvar**, pompalayan hoparlör kuleleri ve vuruşa göre zıplayıp sahne metrene tepki veren seyirci.
 - **Nota otoyolu.** Pahlı mücevher notalar, akan otoyol, vuruş ve ölçü çizgileri, bloom ve parçacıklar. Işıklar bölüm yoğunluğunu ve şarkının enerji eğrisini izler.
-- **Klavye ve kol.** **WebHID** üzerinden tam DualSense desteği (Bluetooth dahil güvenilir titreşim), Gamepad-API yedeğiyle.
-- **Katmanlı titreşim.** İsabette net tıklar; vurgu, bırak ve rulo için ayrı desenler; uzun nota basılıyken hafif uğultu; Boost boyunca vuruşa kilitli kalp atışı; ayarlanabilir güç.
+- **Klavye ve kol.** **WebHID** üzerinden tam DualSense desteği (Bluetooth dahil güvenilir titreşim), Gamepad-API yedeğiyle. Tuşlar **her kol raporu geldiği anda** ve raporun kendi zaman damgasıyla işlenir: akorlar birlikte algılanır, yoğun bir kare vuruşu geciktirmez.
+- **Katmanlı titreşim.** İsabette net tıklar; vurgu, bırak ve rulo için ayrı desenler; uzun nota basılıyken hafif uğultu; ayarlanabilir güç. **Boost boyunca kesintisiz gümbür** (vuruşta kabarır) ve her vurduğun nota bunun üstünde ayrıca hissedilir. Boost başlangıcı ve bitişinin kendi desenleri var. Titreşim raporları kuyrukta birikmez, tuş girişini geciktiremez.
 - **Açık görüş.** İsabet ve kombo yazıları otoyolun üstünde değil yanında durur. Erken basışta nota alanı üst kenarından, geç basışta alt kenarından parlar.
 - **İki dilli arayüz.** İngilizce ve Türkçe; otomatik algılanır, anında değiştirilebilir.
 
@@ -120,7 +123,21 @@ npm start                   # http://localhost:3000 adresinde açılır
 | Synth lead / pad'de yanlış "vokal" | 23.8 / dk | **2.9 / dk** |
 | Kick / trampet vuruş F1 | %61 / %28 | **%71 / %41** |
 
-**Gerçek vokallerde** (8 zor şarkı: pop, rap, R&B, vokalli EDM), Demucs ile ayrılmış referans vokallere karşı `tools/realvocal-bench.mjs` ile:
+**Gerçek şarkılarda tüm parçalar.** `tools/make-stem-refs.py` gerçek şarkıları Demucs ile davul, bas, enstrüman ve vokale ayırır ve her temiz kanaldan referans olaylar çıkarır. `tools/stems-bench.mjs` oyunun tespitini **ve haritalarını** bunlara karşı ölçer. 18 şarkı var (pop, rap, R&B, EDM, phonk, rock): 8'i ayarda kullanıldı, 10'u ayrıldı ve yalnızca sonucu doğrulamak için kullanıldı. Tablo ayar / ayrılmış set olarak gösterir.
+
+| Ölçüt | Önce | Şimdi |
+| --- | --- | --- |
+| Tempo doğru (yarım/çift kabul) | şarkıların %61'i | **%100** |
+| Her bas notasında perde sınıfı | %27 / %29 | **%63 / %51** |
+| Lead notalarının gerçek enstrüman vuruşuna denk gelmesi (Orta) | %81 / %80 | **%90 / %84** |
+| Enstrüman vuruşlarının Lead haritasınca kapsanması (Usta) | %37 / %41 | **%56 / %55** |
+| Davul notalarının gerçek davul vuruşuna denk gelmesi (Orta) | %79 / %75 | **%80 / %77** |
+| Vokal notalarının duyulan vokale denk gelmesi (Orta) | %90 / %81 | **%89 / %81** |
+
+**Vokalde** Demucs vokal kanalına karşı MIREX ölçütleriyle (`tools/realvocal-bench.mjs`): ham perde doğruluğu **%54 / %52**, genel doğruluk **%67 / %63**. Voicing yakalama **%69 / %68**, yanlış alarm **%18 / %28**. (Bu tablonun eski sürümleri daha düşük değerler gösteriyordu. Referans aracı, gerçek adım 9.977 ms iken 10 ms varsayıyordu; bu da referansları 90 saniyede 0.2 saniyeye kadar kaydırıyordu. Hata düzeltildi; yukarıdaki tüm değerler düzeltilmiş referanslarla ölçüldü.)
+
+<details><summary>Eski vokal tablosu (kayık referanslarla)</summary>
+
 
 | Ölçüt | Önce | Şimdi |
 | --- | --- | --- |
@@ -128,7 +145,9 @@ npm start                   # http://localhost:3000 adresinde açılır
 | Genel doğruluk (perde + sessizlik) | %52.5 | **%56.5** |
 | Vokal yakalama / yanlış alarm | %58.7 / %28.7 | **%61.3 / %26.6** |
 
-Demucs yalnızca geliştirme sırasında ölçüm aracı olarak kullanılır (`tools/make-vocal-refs.py`); oyunun kendisi ML'siz kalır ve tamamen tarayıcıda çalışır.
+</details>
+
+Demucs yalnızca geliştirme sırasında ölçüm aracı olarak kullanılır; oyunun kendisi ML'siz kalır ve tamamen tarayıcıda çalışır.
 
 ## 🏆 Puanlama
 

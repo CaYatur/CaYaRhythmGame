@@ -2,7 +2,7 @@
 
 import { analyzeArrayBuffer, decodeAudio } from './audio/analyzer.js';
 import { Mixer } from './audio/mixer.js';
-import { buildChart, DIFFICULTIES, MODES, LEGACY_MODES } from './game/chart.js';
+import { buildChart, DIFFICULTIES, MODES, LEGACY_MODES, NOTE_TOGGLES } from './game/chart.js';
 import { Scoring } from './game/scoring.js';
 import { Input, KEY_HINT_4, KEY_HINT_5 } from './game/input.js';
 import { DualSenseHID } from './game/dualsense-hid.js';
@@ -26,7 +26,9 @@ function readJSON(key, fallback) {
 function writeJSON(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }
 
 const settings = Object.assign(
-  { noteSpeed: 1.0, latency: 0, volume: 80, rumble: 80, feedback: true, noFail: false, lefty: false },
+  { noteSpeed: 1.0, latency: 0, volume: 80, rumble: 80, feedback: true, noFail: false, lefty: false,
+    // nota turleri: false = kapali; offMode: kapali tur yerine 'replace' (uygun nota) | 'empty' (bos)
+    noteTypes: {}, offMode: 'replace' },
   readJSON('caya-settings', {})
 );
 function saveSettings() { writeJSON('caya-settings', settings); }
@@ -112,8 +114,11 @@ function artStyle(name) {
 
 // ---------- menu: parca + zorluk ----------
 const NPS_PIPS = [0.8, 1.8, 3, 4.5, 6.5];
-function chartFor(mode, diff) {
-  return buildChart(state.analysis, diff, mode, { lefty: settings.lefty });
+function chartOpts() {
+  return { lefty: settings.lefty, types: settings.noteTypes, offMode: settings.offMode };
+}
+function chartFor(mode, diff, opts = chartOpts()) {
+  return buildChart(state.analysis, diff, mode, opts);
 }
 
 function renderCards() {
@@ -165,17 +170,44 @@ const NOTE_GLYPHS = {
   chord: '<svg viewBox="0 0 18 14"><rect x="1" y="5" width="6" height="5" rx="1.6" fill="#35c4f0"/><rect x="11" y="5" width="6" height="5" rx="1.6" fill="#59d96b"/><rect x="6" y="7" width="6" height="1.2" fill="#fff"/></svg>'
 };
 
+// Nota turu cipleri: tiklayinca tur acilir/kapanir (Nota hep acik). Kapali
+// turler icin 'yerine nota' ya da 'bos birak' secilir. Sayilar haritanin
+// guncel halini gosterir; kapali turun cipinde tum turler acikkenki sayisi soluk.
 function renderLegend() {
   const wrap = $('note-legend');
   if (!wrap) return;
   if (!state.analysis) { wrap.innerHTML = ''; return; }
-  const st = chartFor(state.mode, state.difficulty).stats;
-  const counts = {
+  const countsOf = (st) => ({
     tap: st.count - st.holds - st.lifts - st.rolls, hold: st.holds, lift: st.lifts,
     roll: st.rolls, accent: st.accents, chord: st.chords
-  };
-  wrap.innerHTML = Object.entries(counts).filter(([, n]) => n > 0).map(([k, n]) =>
-    `<span class="nl-chip" title="${esc(t('note.' + k + '.desc'))}">${NOTE_GLYPHS[k]}${t('note.' + k)} <b>${n}</b></span>`).join('');
+  });
+  const cur = countsOf(chartFor(state.mode, state.difficulty).stats);
+  const all = countsOf(chartFor(state.mode, state.difficulty, { lefty: settings.lefty }).stats);
+  const isOn = (k) => settings.noteTypes[k] !== false;
+  const anyOff = NOTE_TOGGLES.some(k => !isOn(k));
+  const chips = Object.keys(cur).filter(k => k === 'tap' || all[k] > 0 || !isOn(k)).map(k => {
+    if (k === 'tap') return `<span class="nl-chip" title="${esc(t('note.tap.desc'))}">${NOTE_GLYPHS.tap}${t('note.tap')} <b>${cur.tap}</b></span>`;
+    const on = isOn(k);
+    return `<button type="button" class="nl-chip nl-toggle${on ? '' : ' off'}" data-type="${k}" aria-pressed="${on}"
+      aria-label="${esc(t('note.' + k))}" title="${esc(t('note.' + k + '.desc') + ' — ' + t(on ? 'legend.clickOff' : 'legend.clickOn'))}">${NOTE_GLYPHS[k]}${t('note.' + k)} <b>${on ? cur[k] : all[k]}</b></button>`;
+  });
+  const mode = anyOff ? `<span class="nl-off" role="group" aria-label="${esc(t('legend.offLabel'))}">
+      <small>${t('legend.offLabel')}</small>
+      <button type="button" data-off="replace" aria-pressed="${settings.offMode !== 'empty'}" title="${esc(t('legend.replace.desc'))}">${t('legend.replace')}</button>
+      <button type="button" data-off="empty" aria-pressed="${settings.offMode === 'empty'}" title="${esc(t('legend.empty.desc'))}">${t('legend.empty')}</button>
+    </span>` : '';
+  wrap.innerHTML = chips.join('') + mode;
+  wrap.querySelectorAll('.nl-toggle').forEach(b => {
+    b.onclick = () => {
+      const k = b.dataset.type;
+      settings.noteTypes = Object.assign({}, settings.noteTypes, { [k]: !isOn(k) });
+      saveSettings();
+      renderCards();
+    };
+  });
+  wrap.querySelectorAll('[data-off]').forEach(b => {
+    b.onclick = () => { settings.offMode = b.dataset.off; saveSettings(); renderCards(); };
+  });
 }
 
 // yeni nota turlerini ilk karsilasmada bir kez acikla
@@ -481,9 +513,23 @@ function highlightControls(heldLanes) {
 
 // ---------- oyun ----------
 // sarki zamani: ses saati * hiz + baslangic ofseti - cikis gecikmesi + kullanici ayari
-function songTime() {
+// Sarki zamani. ctx.currentTime ses blogu adimlariyla (Windows'ta ~10 ms'ye
+// kadar) ilerler; adimlar arasi performance.now() ile puruzsuzlestirilir.
+// when (ms, performance.now tabani): o anki sarki zamani (girdi olay zamani).
+const clk = { ctx: -1, perf: 0 };
+function ctxTimeAt(ctx, when) {
+  const now = performance.now();
+  const ct = ctx.currentTime;
+  if (ct !== clk.ctx) { clk.ctx = ct; clk.perf = now; }
+  // son adimdan bu yana gecen gercek sure (en fazla 40 ms ekstrapolasyon)
+  const ahead = ctx.state === 'running' ? Math.min(0.04, (now - clk.perf) / 1000) : 0;
+  let t = ct + ahead;
+  if (when != null && when < now) t -= Math.min(0.25, (now - when) / 1000);
+  return t;
+}
+function songTime(when) {
   const ctx = state.audioCtx;
-  const raw = (ctx.currentTime - state.startCtxTime) * state.rate + state.songOffset;
+  const raw = (ctxTimeAt(ctx, when) - state.startCtxTime) * state.rate + state.songOffset;
   const outLat = ctx.outputLatency || ctx.baseLatency || 0;
   return raw - outLat + settings.latency / 1000;
 }
@@ -495,10 +541,8 @@ function startGame(practice = null, leadIn = 3) {
   state.practice = practice;
   state.rate = practice ? practice.rate : 1;
 
-  state.chart = buildChart(state.analysis, state.difficulty, state.mode, {
-    lefty: settings.lefty,
-    range: practice ? practice.range : null
-  });
+  state.chart = buildChart(state.analysis, state.difficulty, state.mode,
+    Object.assign(chartOpts(), { range: practice ? practice.range : null }));
   if (!state.chart.notes.length) {
     toast(t('toast.noNotes'), 'warn');
     if (state.playing) quitToMenu(); // pratik dongusu bos bir araliga denk geldiyse durdur
@@ -561,9 +605,9 @@ function startGame(practice = null, leadIn = 3) {
   loop();
 }
 
-function onLane(lane, down) {
-  if (!state.playing || state.paused) return;
-  const st = songTime();
+function onLane(lane, down, when) {
+  if (!state.playing || state.paused || state.resuming) return;
+  const st = songTime(when);
   state.engine.pressLane(lane, down);
   if (down) state.scoring.hit(lane, st);
   else state.scoring.release(lane, st, state.input.boostHeld);
@@ -660,8 +704,7 @@ function onScoringEvent(type, data) {
       hud.boostFlash();
       state.engine.onBoost(true);
       state.haptics.play('boostStart');
-      // boost boyunca vurusa kilitli "kalp atisi"
-      state.haptics.setBoost(() => state.engine.beatPeriodPhase(songTime()));
+      armBoostHaptics();
       break;
     case 'boostExtend':
       hud.boostFlash();
@@ -675,6 +718,7 @@ function onScoringEvent(type, data) {
       break;
     case 'boostEnd':
       state.haptics.setBoost(null);
+      state.haptics.play('boostEnd');
       hud.setBoost(s.bars, s.groupProgress, false, 0);
       hud.setMult(s.multiplier, s.multProgress, false);
       break;
@@ -683,6 +727,11 @@ function onScoringEvent(type, data) {
       if (data.completed) state.haptics.play('holdDone');
       break;
   }
+}
+
+// boost boyunca kesintisiz gumbur, vurusa kilitli nabizla
+function armBoostHaptics() {
+  state.haptics.setBoost(() => state.engine.beatPeriodPhase(songTime()));
 }
 
 function sectionAt(time) {
@@ -706,6 +755,7 @@ function loop() {
     state.resuming = false;
     state.paused = false;
     state.audioCtx.resume();
+    if (state.scoring.boostActive) armBoostHaptics(); // duraklatma titresimi kesmisti
     state.lastFrameT = now;
     return;
   }

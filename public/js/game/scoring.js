@@ -241,8 +241,14 @@ export class Scoring {
       if (adt <= WINDOWS.good && adt < bestDt) { best = n; bestDt = adt; }
     }
     if (!best) {
-      // birak notasina yakin basis: oyuncu birakmaya hazirlaniyor (ceza yok)
-      if (manual && this._liftNear(lane, t)) return null;
+      if (manual) {
+        // birak notasi yeniden basarak da calinabilir (erken birakan oyuncu
+        // tam zamaninda tekrar basarsa isabet) — turun yerlesik kurali
+        const lj = this._liftJudge(lane, t);
+        if (lj) return lj;
+        // birak notasina yakin basis: oyuncu birakmaya hazirlaniyor (ceza yok)
+        if (this._liftNear(lane, t)) return null;
+      }
       if (manual) {
         this.wrongHits++;
         this.mistakes++;

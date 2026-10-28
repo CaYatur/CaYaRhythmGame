@@ -4,7 +4,9 @@
 // guncellenen bir karistirici (her motor icin katmanlarin en buyugu):
 //   - olaylar: kisa zarfli darbeler ve desenler (isabet, vurgu, birak, rulo...)
 //   - surdurme: uzun nota basili tutulurken hafif, sabit ugultu
-//   - boost: vurus izgarasina kilitli "kalp atisi" nabzi
+//   - boost: boost boyunca KESINTISIZ gumbur + vurus izgarasina kilitli nabiz
+// Surekli katman (surdurme/boost) bir "yatak"tir; olaylar onun UZERINE eklenir
+// (maks degil), boylece boost gumburu surerken her nota yine ayri hissedilir.
 // Motorlar: strong = sol/dusuk frekans (gumbur), weak = sag/yuksek frekans (tik).
 // Kisa isabetler yalniz yuksek frekans motorla "net tik" hissi verir; agir
 // olaylar (boost, kutlama, basarisizlik) dusuk frekans motorunu kullanir.
@@ -19,6 +21,7 @@ const PATTERNS = {
   accent:    [[0, 60, 0.28, 0.5, 'tap']],
   lift:      [[0, 16, 0, 0.36, 'flat'], [24, 18, 0, 0.18, 'tap']],          // "birakma" cift tik
   boostNote: [[0, 45, 0.12, 0.42, 'tap']],
+  boostHit:  [[0, 55, 0.22, 0.5, 'tap']],                                    // boost yataginin ustunde net vurus
   rollTick:  [[0, 16, 0, 0.2, 'tap']],
   rollDone:  [[0, 110, 0.32, 0.45, 'tap']],
   holdDone:  [[0, 55, 0.14, 0.34, 'tap']],
@@ -28,6 +31,7 @@ const PATTERNS = {
   milestone: [[0, 55, 0.35, 0.5, 'tap'], [110, 55, 0.35, 0.5, 'tap']],       // cift vurus
   boostStart:[[0, 140, 0.9, 0.6, 'ramp'], [140, 380, 0.75, 0.45, 'tap']],    // "vuuush"
   boostExtend:[[0, 90, 0.4, 0.5, 'tap']],
+  boostEnd:  [[0, 70, 0.34, 0.22, 'tap'], [110, 140, 0.2, 0.1, 'tap']],      // inen cift darbe: boost bitti
   fail:      [[0, 750, 0.85, 0.35, 'tap']],
   connect:   [[0, 90, 0.25, 0.3, 'tap']],
   test:      [[0, 60, 0, 0.5, 'tap'], [120, 60, 0, 0.5, 'tap'], [240, 360, 0.75, 0.55, 'ramp']],
@@ -36,7 +40,12 @@ const PATTERNS = {
 };
 
 const SUSTAIN_WEAK = 0.12;   // uzun nota basiliyken
-const BOOST_BEAT = 0.24;     // boost kalp atisi tepe (strong)
+// boost yatagi: strong hic sifira dusmez (taban), vurusta kabarir; weak hafif dolgu
+const BOOST_BED_S = 0.2;
+const BOOST_BEAT_S = 0.24;   // tabanin uzerine vurus nabzi (tepe = 0.44)
+const BOOST_BED_W = 0.12;
+// cok dusuk degerlerde motor donmez: guc ayari dusukken bile yatak hissedilsin
+const MIN_FELT = 0.12;
 
 export class Haptics {
   // out(strong, weak): motor ciktisi (0..1). input.js saglar.
@@ -67,6 +76,7 @@ export class Haptics {
     if (note.type === 'roll') return this.play('rollDone');
     if (note.type === 'lift') return this.play('lift');
     if (note.accent && judgment !== 'good') return this.play('accent');
+    if (this.boostPhase) return this.play('boostHit'); // boost suruyor: her nota yatagin ustunde
     if (note.boost) return this.play('boostNote');
     if (note.chord != null) return this.play('chord');
     this.play(judgment);
@@ -91,7 +101,8 @@ export class Haptics {
 
   _tick() {
     const now = performance.now();
-    let s = 0, w = 0;
+    let s = 0, w = 0;     // olay katmani (en buyuk)
+    let bs = 0, bw = 0;   // surekli yatak
     for (let i = this.events.length - 1; i >= 0; i--) {
       const e = this.events[i];
       const x = (now - e.t0) / e.dur;
@@ -103,14 +114,16 @@ export class Haptics {
       if (e.s * k > s) s = e.s * k;
       if (e.w * k > w) w = e.w * k;
     }
-    if (this.holds > 0) w = Math.max(w, SUSTAIN_WEAK + 0.02 * Math.min(2, this.holds - 1));
+    if (this.holds > 0) bw = SUSTAIN_WEAK + 0.02 * Math.min(2, this.holds - 1);
     if (this.boostPhase) {
       const ph = this.boostPhase();
-      const beat = Math.pow(1 - ph, 3);
-      s = Math.max(s, BOOST_BEAT * beat);
-      w = Math.max(w, 0.08);
+      bs = BOOST_BED_S + BOOST_BEAT_S * Math.pow(1 - ph, 3);
+      bw = Math.max(bw, BOOST_BED_W);
     }
-    this._send(s * this.strength, w * this.strength);
+    const k = this.strength;
+    const bed = (v) => (v > 0 && k > 0 ? Math.max(MIN_FELT, v * k) : 0);
+    // olaylar yatagin uzerine eklenir: surekli gumbur notalari yutmasin
+    this._send(bed(bs) + s * k, bed(bw) + w * k);
     if (!this.events.length && !this.holds && !this.boostPhase && this._last[0] === 0 && this._last[1] === 0) {
       clearInterval(this._timer);
       this._timer = 0;

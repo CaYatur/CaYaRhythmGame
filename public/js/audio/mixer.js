@@ -4,13 +4,15 @@
 //
 // Parca geri bildirimi: oyuncu notalari kacirdikca CALDIGI PARCA miksten
 // kisilir, isabetle geri gelir (tum sarki degil, yalniz o parca):
-//   vocal: orta kanalda 1.2-3.5 kHz bolgesi (vokal/lead varligi)
+//   vocal: orta kanalda 1.2-3.5 kHz bolgesi (vokal varligi)
+//   lead:  yan kanalda (stereo genis enstrumanlar) orta-tiz bolge; ortada hafif
 //   bass:  orta kanalda alcak raf (<220 Hz)
 //   drums: orta+yan alcak (kick) ve yuksek raf (trampet/hat)
 //   mix:   genel ses (tam grup)
 
 const FEEDBACK = {
   vocal: { filters: [{ type: 'peaking', f: 1900, q: 0.6, db: -16 }], side: false },
+  lead: { filters: [{ type: 'peaking', f: 1400, q: 0.45, db: -16 }], side: true, midScale: 0.35 },
   bass: { filters: [{ type: 'lowshelf', f: 220, db: -18 }], side: false },
   drums: { filters: [{ type: 'lowshelf', f: 140, db: -12 }, { type: 'highshelf', f: 3500, db: -14 }], side: true },
   mix: { filters: [], side: false, broadband: -8 }
@@ -72,14 +74,14 @@ export class Mixer {
     try { this.mid.disconnect(); } catch {}
     try { this.side.disconnect(); } catch {}
     for (const f of this.chainM.concat(this.chainS)) { try { f.disconnect(); } catch {} }
-    const build = (spec) => spec.map(s => {
+    const build = (spec, scale = 1) => spec.map(s => {
       const f = ctx.createBiquadFilter();
       f.type = s.type; f.frequency.value = s.f; if (s.q) f.Q.value = s.q;
       f.gain.value = 0;
-      f._db = s.db;
+      f._db = s.db * scale;
       return f;
     });
-    this.chainM = build(this.profile.filters);
+    this.chainM = build(this.profile.filters, this.profile.midScale != null ? this.profile.midScale : 1);
     this.chainS = this.profile.side ? build(this.profile.filters) : [];
     const link = (src, chain, dst) => {
       let n = src;
