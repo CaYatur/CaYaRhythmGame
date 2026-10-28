@@ -564,7 +564,10 @@ function trackBeats(envIn, F, tune = {}) {
       const c = bestLag * r;
       if (c < minLag || c > maxLag) continue;
       const [fit, cl] = fitNear(c);
-      if (fit > pickFit) { pick = Math.round(cl); pickFit = fit; }
+      // cok hizli tempoya (>180 BPM) cikmak icin daha guclu kanit: uc'leme
+      // hissi olan orta tempolu sarkilar aksi halde 3/2 katina kayiyordu
+      const need = 60 / (cl * HOP_T) > (tune.tempoFastBpm || 180) ? (tune.tempoFastMargin || 1.2) / (tune.tempo32Margin || 1.08) : 1;
+      if (fit > pickFit * need) { pick = Math.round(cl); pickFit = fit; }
     }
     bestLag = pick;
   }
